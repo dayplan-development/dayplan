@@ -1,8 +1,10 @@
+from unittest.mock import Mock, call
+
 import pytest
-from flask import Flask
+from flask import Flask, g
 
 from config import TestingConfig as AppTestingConfig
-from dayplan import create_app
+from dayplan import close_db, create_app, database, get_db
 
 
 @pytest.fixture
@@ -14,6 +16,15 @@ def app(monkeypatch):
 @pytest.fixture
 def client(app):
     return app.test_client()
+
+
+@pytest.fixture
+def database_helpers(monkeypatch):
+    opener = Mock(side_effect=lambda database_path: object())
+    closer = Mock()
+    monkeypatch.setattr(database, "get_connection", opener, raising=False)
+    monkeypatch.setattr(database, "close_connection", closer, raising=False)
+    return opener, closer
 
 
 def test_create_app_loads_secret_key_from_environment(monkeypatch):
@@ -92,6 +103,72 @@ def test_create_app_does_not_create_database_file(monkeypatch, tmp_path):
 
     assert not database_path.exists()
     assert not database_path.parent.exists()
+
+
+def test_unused_app_context_does_not_open_or_close_a_connection(
+    monkeypatch, database_helpers
+):
+    opener, closer = database_helpers
+    monkeypatch.setenv("SECRET_KEY", "dayplan-route-tests-only")
+
+    app = create_app(AppTestingConfig)
+    opener.assert_not_called()
+
+    with app.app_context():
+        opener.assert_not_called()
+
+    opener.assert_not_called()
+    closer.assert_not_called()
+
+
+def test_get_db_opens_configured_path_and_reuses_connection(app, database_helpers):
+    opener, closer = database_helpers
+
+    with app.app_context():
+        connection = get_db()
+        assert get_db() is connection
+        opener.assert_called_once_with(app.config["DATABASE_PATH"])
+        closer.assert_not_called()
+
+    closer.assert_called_once_with(connection)
+
+
+def test_separate_app_contexts_have_separate_connections(app, database_helpers):
+    opener, closer = database_helpers
+
+    with app.app_context():
+        outer_connection = get_db()
+        with app.app_context():
+            inner_connection = get_db()
+            assert inner_connection is not outer_connection
+        closer.assert_called_once_with(inner_connection)
+        assert get_db() is outer_connection
+
+    assert opener.call_count == 2
+    assert closer.call_args_list == [call(inner_connection), call(outer_connection)]
+
+
+def test_close_db_removes_connection_before_context_teardown(app, database_helpers):
+    _, closer = database_helpers
+
+    with app.app_context():
+        connection = get_db()
+        close_db()
+        assert "db" not in g
+        closer.assert_called_once_with(connection)
+
+    closer.assert_called_once_with(connection)
+
+
+def test_teardown_closes_connection_after_context_error(app, database_helpers):
+    _, closer = database_helpers
+
+    with pytest.raises(RuntimeError, match="test context error"):
+        with app.app_context():
+            connection = get_db()
+            raise RuntimeError("test context error")
+
+    closer.assert_called_once_with(connection)
 
 
 def test_dashboard_renders_placeholder(client):

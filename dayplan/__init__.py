@@ -1,8 +1,22 @@
 from pathlib import Path
 
-from flask import Flask, Response, render_template
+from flask import Flask, Response, current_app, g, render_template
 
 from config import DevelopmentConfig, resolve_database_path, resolve_secret_key
+
+from . import database
+
+
+def get_db():
+    if "db" not in g:
+        g.db = database.get_connection(current_app.config["DATABASE_PATH"])
+    return g.db
+
+
+def close_db(error=None):
+    connection = g.pop("db", None)
+    if connection is not None:
+        database.close_connection(connection)
 
 
 def create_app(config_class=DevelopmentConfig):
@@ -18,6 +32,7 @@ def create_app(config_class=DevelopmentConfig):
     app.config["DATABASE_PATH"] = resolve_database_path(
         app.config.get("DATABASE_PATH"), app.instance_path
     )
+    app.teardown_appcontext(close_db)
 
     @app.get("/")
     def dashboard():
