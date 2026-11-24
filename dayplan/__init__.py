@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import click
 from flask import Flask, Response, current_app, g, render_template
 
 from config import DevelopmentConfig, resolve_database_path, resolve_secret_key
@@ -33,6 +34,21 @@ def create_app(config_class=DevelopmentConfig):
         app.config.get("DATABASE_PATH"), app.instance_path
     )
     app.teardown_appcontext(close_db)
+
+    @app.cli.command("init-db")
+    def init_db():
+        """Initialize the configured DayPlan database."""
+        initializer = getattr(database, "initialize_database", None)
+        if initializer is None:
+            raise click.ClickException("Database initialization is unavailable.")
+
+        database_path = current_app.config["DATABASE_PATH"]
+        try:
+            initializer(database_path)
+        except Exception as error:
+            raise click.ClickException("Database initialization failed.") from error
+
+        click.echo("Database initialized successfully.")
 
     @app.get("/")
     def dashboard():

@@ -171,6 +171,45 @@ def test_teardown_closes_connection_after_context_error(app, database_helpers):
     closer.assert_called_once_with(connection)
 
 
+def test_init_db_command_is_registered(app):
+    result = app.test_cli_runner().invoke(args=["init-db", "--help"])
+
+    assert result.exit_code == 0
+    assert "Initialize the configured DayPlan database." in result.output
+
+
+def test_init_db_passes_configured_path_and_reports_success(app, monkeypatch, tmp_path):
+    database_path = str(tmp_path / "configured.sqlite3")
+    app.config["DATABASE_PATH"] = database_path
+    initializer = Mock()
+    monkeypatch.setattr(database, "initialize_database", initializer, raising=False)
+
+    result = app.test_cli_runner().invoke(args=["init-db"])
+
+    initializer.assert_called_once_with(database_path)
+    assert result.exit_code == 0
+    assert result.output == "Database initialized successfully.\n"
+
+
+def test_init_db_hides_initializer_failure_details(app, monkeypatch):
+    initializer = Mock(side_effect=RuntimeError("CREATE TABLE failed at a private path"))
+    monkeypatch.setattr(database, "initialize_database", initializer, raising=False)
+
+    result = app.test_cli_runner().invoke(args=["init-db"])
+
+    assert result.exit_code == 1
+    assert result.output == "Error: Database initialization failed.\n"
+
+
+def test_init_db_reports_unavailable_initializer(app, monkeypatch):
+    monkeypatch.delattr(database, "initialize_database", raising=False)
+
+    result = app.test_cli_runner().invoke(args=["init-db"])
+
+    assert result.exit_code == 1
+    assert result.output == "Error: Database initialization is unavailable.\n"
+
+
 def test_dashboard_renders_placeholder(client):
     response = client.get("/")
 
