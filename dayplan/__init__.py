@@ -2,7 +2,7 @@ from pathlib import Path
 
 from flask import Flask, Response, render_template
 
-from config import DevelopmentConfig
+from config import DevelopmentConfig, resolve_database_path, resolve_secret_key
 
 
 def create_app(config_class=DevelopmentConfig):
@@ -14,6 +14,10 @@ def create_app(config_class=DevelopmentConfig):
         static_url_path="/static",
     )
     app.config.from_object(config_class)
+    app.secret_key = resolve_secret_key(app.secret_key)
+    app.config["DATABASE_PATH"] = resolve_database_path(
+        app.config.get("DATABASE_PATH"), app.instance_path
+    )
 
     @app.get("/")
     def dashboard():
