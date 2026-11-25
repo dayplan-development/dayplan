@@ -3,8 +3,97 @@
 {% block title %}DayPlan | Dashboard{% endblock %}
 
 {% block content %}
+
+{# TEMPORARY SAMPLE DATA: used only until the integrator passes real data #}
+{% if tasks is not defined %}
+  {% set tasks = [
+    {"id": 1, "title": "Submit project report", "description": "Final review before sending to the team lead.", "due_date": "2026-11-23", "priority": "high", "status": "pending", "reminder_at": None, "completed_at": None, "is_overdue": True},
+    {"id": 2, "title": "Follow up with client", "description": "", "due_date": "2026-11-25", "priority": "medium", "status": "in_progress", "reminder_at": "2026-11-25 16:00", "completed_at": None, "is_overdue": False},
+    {"id": 3, "title": "Plan next week", "description": "List priorities and deadlines.", "due_date": "2026-11-30", "priority": "low", "status": "pending", "reminder_at": None, "completed_at": None, "is_overdue": False},
+    {"id": 4, "title": "Book team meeting", "description": "", "due_date": "2026-11-25", "priority": "medium", "status": "completed", "reminder_at": None, "completed_at": "2026-11-25 10:30", "is_overdue": False}
+  ] %}
+{% endif %}
+{% if summary is not defined %}
+  {% set summary = {"due_today": 2, "overdue": 1, "completed_today": 1, "weekly_percent": 25, "weekly_total": 4} %}
+{% endif %}
+
 <section class="page-intro">
-  <h1>Your day</h1>
+  <h2>Your day</h2>
   <p>Tasks, deadlines and follow-ups in one calm place.</p>
+</section>
+
+<section class="summary-grid" aria-label="Summary">
+  <article class="stat">
+    <span class="stat-label">Due today</span>
+    <span class="stat-value">{{ summary.due_today }}</span>
+  </article>
+  <article class="stat stat-alert">
+    <span class="stat-label">Overdue</span>
+    <span class="stat-value">{{ summary.overdue }}</span>
+  </article>
+  <article class="stat">
+    <span class="stat-label">Completed today</span>
+    <span class="stat-value">{{ summary.completed_today }}</span>
+  </article>
+  <article class="stat">
+    <span class="stat-label">This week</span>
+    {% if summary.weekly_total %}
+      <span class="stat-value">{{ summary.weekly_percent }}%</span>
+      <span class="progress"><span style="width: {{ summary.weekly_percent }}%"></span></span>
+    {% else %}
+      <span class="stat-empty">No tasks due</span>
+    {% endif %}
+  </article>
+</section>
+
+<form class="filters" method="get">
+  <label>Status
+    <select name="status">
+      <option value="">All</option>
+      <option value="pending" {% if selected_status == 'pending' %}selected{% endif %}>Pending</option>
+      <option value="in_progress" {% if selected_status == 'in_progress' %}selected{% endif %}>In progress</option>
+      <option value="completed" {% if selected_status == 'completed' %}selected{% endif %}>Completed</option>
+    </select>
+  </label>
+  <label>Priority
+    <select name="priority">
+      <option value="">All</option>
+      <option value="high" {% if selected_priority == 'high' %}selected{% endif %}>High</option>
+      <option value="medium" {% if selected_priority == 'medium' %}selected{% endif %}>Medium</option>
+      <option value="low" {% if selected_priority == 'low' %}selected{% endif %}>Low</option>
+    </select>
+  </label>
+  <button class="btn btn-ghost" type="submit">Apply</button>
+  <a class="filter-reset" href="/">Reset</a>
+</form>
+
+<section class="task-list">
+  {% for task in tasks %}
+  <article class="task-card priority-{{ task.priority }} {% if task.status == 'completed' %}is-done{% endif %}">
+    <div class="task-main">
+      <div class="task-badges">
+        <span class="badge badge-{{ task.priority }}">{{ task.priority|capitalize }}</span>
+        <span class="badge badge-status">{{ task.status|replace('_', ' ')|capitalize }}</span>
+        {% if task.is_overdue %}<span class="badge badge-overdue">Overdue</span>{% endif %}
+      </div>
+      <h3 class="task-title">{{ task.title }}</h3>
+      {% if task.description %}<p class="task-desc">{{ task.description }}</p>{% endif %}
+      <p class="task-meta">
+        {% if task.due_date %}<span>Due {{ task.due_date }}</span>{% else %}<span>No due date</span>{% endif %}
+        {% if task.reminder_at %}<span>Reminder {{ task.reminder_at }}</span>{% endif %}
+        {% if task.completed_at %}<span>Completed {{ task.completed_at }}</span>{% endif %}
+      </p>
+    </div>
+    <div class="task-actions">
+      {% if task.status != 'completed' %}
+        <a class="btn btn-small btn-primary" href="#">Complete</a>
+        <a class="btn btn-small btn-ghost" href="#">Edit</a>
+      {% endif %}
+      <a class="btn btn-small btn-danger" href="#">Delete</a>
+    </div>
+  </article>
+  {% else %}
+  <p class="empty-state">No tasks match these filters.</p>
+  {% endfor %}
 </section>
 {% endblock %}
