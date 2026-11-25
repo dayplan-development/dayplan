@@ -1,14 +1,10 @@
-<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>DayPlan | Daily Task and Reminder Manager</title>
-  </head>
-  <body>
-    <main>
-      <h1>DayPlan</h1>
-      <p>Plan your day. Own your time.</p>
-    </main>
-  </body>
-</html>
+{% extends "base.html" %}
+
+{% block title %}DayPlan | Dashboard{% endblock %}
+
+{% block content %}
+<section class="page-intro">
+  <h1>Your day</h1>
+  <p>Tasks, deadlines and follow-ups in one calm place.</p>
+</section>
+{% endblock %}
