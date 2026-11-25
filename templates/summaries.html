@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Summaries</h1>
+<p><a href="{{ url_for('dashboard', **query_filters) }}">Back to dashboard</a></p>
+<section id="daily"><h2>Daily: {{ daily.date }}</h2>
+<p>Due: {{ daily.due_total }} ({{ daily.due_pending }} pending, {{ daily.due_completed }} completed)</p>
+<p>Overdue: {{ daily.overdue }} | Completed today: {{ daily.completed_today }}</p></section>
+<section id="weekly"><h2>Weekly: {{ weekly.week_start }} to {{ weekly.week_end }}</h2>
+<p>Due: {{ weekly.due_total }} ({{ weekly.due_pending }} pending, {{ weekly.due_completed }} completed)</p>
+<p>Overdue: {{ weekly.overdue }} |
+{% if weekly.completion_rate is none %}No tasks due{% else %}Completion rate: {{ "%.1f"|format(weekly.completion_rate) }}%{% endif %}</p></section>
+{% endblock %}
