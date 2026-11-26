@@ -1,14 +1,37 @@
-<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>DayPlan | Daily Task and Reminder Manager</title>
-  </head>
-  <body>
-    <main>
-      <h1>DayPlan</h1>
-      <p>Plan your day. Own your time.</p>
-    </main>
-  </body>
-</html>
+{% extends "base.html" %}
+{% block content %}
+<h1>DayPlan</h1>
+<p>Plan your day. Own your time.</p>
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% for category, message in messages %}<p role="status" class="flash {{ category }}">{{ message }}</p>{% endfor %}
+{% endwith %}
+<p><a href="{{ url_for('summaries', **query_filters) }}">View summaries</a></p>
+<form method="get" aria-label="Task filters">
+  <label>Status <select name="status"><option>All</option>{% for value in ("Pending", "Completed", "Overdue") %}<option{% if filters.status == value %} selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
+  <label>Priority <select name="priority"><option>All</option>{% for value in ("Low", "Medium", "High") %}<option{% if filters.priority == value %} selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
+  <button type="submit">Filter</button>
+</form>
+<section aria-labelledby="add-task"><h2 id="add-task">Add task</h2>
+  {% for name, message in errors.items() %}<p role="alert">{{ name }}: {{ message }}</p>{% endfor %}
+  <form method="post" action="{{ url_for('create_task', **query_filters) }}">
+    <label>Title <input name="title" maxlength="100" required value="{{ form_values.title }}"></label>
+    <label>Description <textarea name="description" maxlength="500">{{ form_values.description }}</textarea></label>
+    <label>Due date <input type="date" name="due_date" value="{{ form_values.due_date }}"></label>
+    <label>Priority <select name="priority">{% for value in ("Low", "Medium", "High") %}<option{% if form_values.priority == value %} selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
+    <button type="submit">Add task</button>
+  </form>
+</section>
+<section aria-labelledby="tasks"><h2 id="tasks">Tasks</h2>
+{% if tasks %}
+<ul>{% for item in tasks %}<li>
+  <strong>{{ item.task.title }}</strong> — {{ item.task.priority }} — {{ item.task.status }}
+  {% if item.task.due_date %} — due {{ item.task.due_date }}{% endif %}
+  {% if item.is_overdue %}<b>Overdue</b>{% elif item.is_due_today %}<b>Due today</b>{% endif %}
+  {% if item.task.description %}<p>{{ item.task.description }}</p>{% endif %}
+  <a href="{{ url_for('edit_task', task_id=item.task.id, **query_filters) }}">Edit</a>
+  {% if item.task.status == "Pending" %}<form method="post" style="display:inline" action="{{ url_for('complete_task', task_id=item.task.id, **query_filters) }}"><button>Complete</button></form>{% endif %}
+  <form method="post" style="display:inline" action="{{ url_for('delete_task', task_id=item.task.id, **query_filters) }}" onsubmit="return confirm('Delete this task?')"><button>Delete</button></form>
+</li>{% endfor %}</ul>
+{% else %}<p>No tasks match these filters.</p>{% endif %}
+</section>
+{% endblock %}

@@ -6,18 +6,22 @@ Plan your day. Own your time.
 
 ## Run locally
 
-Use Python 3.13. From the repository root in PowerShell, create a fresh virtual environment and install the dependencies. If `.venv` already belongs to another Python version, use a new environment path in these commands.
+Use Python 3.13. From the repository root, create a fresh virtual environment and install the dependencies. If `.venv` already belongs to another Python version, use a new environment path.
 
-```powershell
-py -3.13 -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
-.\.venv\Scripts\python.exe -m flask --app app run --debug
+```bash
+python3.13 -m venv .venv
+.venv/bin/python -m pip install -r requirements.txt
+.venv/bin/python -m flask --app app init-db
+.venv/bin/python -m flask --app app run --debug
 ```
 
-Open [the dashboard](http://127.0.0.1:5000/) or check [application health](http://127.0.0.1:5000/health). The dashboard is a placeholder, and the health endpoint checks that Flask can respond.
+Open [the dashboard](http://127.0.0.1:5000/) or check [application health](http://127.0.0.1:5000/health). The dashboard supports task CRUD, filters, and links to daily and weekly summaries.
 
 ## Run tests
 
-```powershell
-.\.venv\Scripts\python.exe -m pytest -q
+```bash
+.venv/bin/python -m pytest -q
 ```
+
+The backend implementation and remaining handoff work are documented in
+[the backend implementation report](docs/BACKEND_IMPLEMENTATION_REPORT.md).
