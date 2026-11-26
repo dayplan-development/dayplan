@@ -255,3 +255,53 @@ h1, h2, h3 {
 }
 
 .form-actions { display: flex; gap: 0.75rem; flex-wrap: wrap; padding-top: 0.5rem; }
+/* Flash messages */
+.flash-stack { display: grid; gap: 0.5rem; margin-bottom: 1.5rem; }
+
+.flash {
+  margin: 0;
+  padding: 0.75rem 1rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--sage);
+  background: var(--surface);
+  font-size: 0.9rem;
+}
+
+.flash-error,
+.flash-danger { border-left-color: var(--burgundy); color: var(--burgundy); }
+
+/* Tablet and below */
+@media (max-width: 720px) {
+  .page { padding: 1.5rem 0 3rem; }
+  .page-intro h2 { font-size: 1.6rem; }
+
+  .header-inner { flex-direction: column; align-items: flex-start; }
+  .header-inner .btn { align-self: stretch; text-align: center; }
+
+  .summary-grid { grid-template-columns: repeat(2, 1fr); gap: 0.75rem; }
+  .stat { padding: 0.9rem 1rem; }
+  .stat-value { font-size: 1.6rem; }
+
+  .filters { align-items: stretch; }
+  .filters label { flex: 1 1 140px; }
+  .filters select { width: 100%; min-width: 0; }
+
+  .task-card { padding: 1rem 1.1rem; }
+  .task-actions { width: 100%; }
+  .task-actions .btn { flex: 1; text-align: center; }
+
+  .form-card { padding: 1.25rem; }
+  .form-actions .btn { flex: 1; text-align: center; }
+}
+
+/* Small phones */
+@media (max-width: 420px) {
+  .summary-grid { grid-template-columns: 1fr; }
+  .task-meta { flex-direction: column; gap: 0.25rem; }
+}
+
+/* Respect users who prefer less motion */
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; animation: none !important; }
+}
