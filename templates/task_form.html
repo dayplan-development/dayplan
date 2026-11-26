@@ -18,7 +18,7 @@
       action="{{ url_for('edit_task', task_id=task.id, status=status, priority=priority) }}">
   <h2 id="edit-task-heading">Edit task</h2>
 
-  {{ task_fields('edit', form_values, errors) }}
+  {{ task_fields('edit', form_values, errors, show_limits=true) }}
 
   <div class="form-actions">
     <button class="btn btn-primary" type="submit">Save changes</button>

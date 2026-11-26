@@ -50,18 +50,22 @@
   {% if message %}<p class="field-error" id="{{ prefix }}-{{ field }}-error">{{ message }}</p>{% endif %}
 {%- endmacro %}
 
-{% macro task_fields(prefix, form_values, task_errors) %}
+{% macro task_fields(prefix, form_values, task_errors, show_limits=false) %}
+  {% set title_hint = show_limits and not task_errors.title %}
+  {% set description_hint = show_limits and not task_errors.description %}
   <div class="field{% if task_errors.title %} has-error{% endif %}">
     <label for="{{ prefix }}-title">Title <span class="required" aria-hidden="true">*</span></label>
     <input id="{{ prefix }}-title" name="title" type="text" required maxlength="100"
-           value="{{ input_value(form_values.title) }}"{{ error_attributes(prefix, 'title', task_errors.title) }}>
+           value="{{ input_value(form_values.title) }}"{{ error_attributes(prefix, 'title', task_errors.title) }}{% if title_hint %} aria-describedby="{{ prefix }}-title-hint"{% endif %}>
+    {% if title_hint %}<span class="hint" id="{{ prefix }}-title-hint">Maximum 100 characters.</span>{% endif %}
     {{ field_error(prefix, 'title', task_errors.title) }}
   </div>
 
   <div class="field{% if task_errors.description %} has-error{% endif %}">
     <label for="{{ prefix }}-description">Description (optional)</label>
-    <textarea id="{{ prefix }}-description" name="description" rows="4" maxlength="500"{{ error_attributes(prefix, 'description', task_errors.description) }}>
+    <textarea id="{{ prefix }}-description" name="description" rows="4" maxlength="500"{{ error_attributes(prefix, 'description', task_errors.description) }}{% if description_hint %} aria-describedby="{{ prefix }}-description-hint"{% endif %}>
 {{ input_value(form_values.description) }}</textarea>
+    {% if description_hint %}<span class="hint" id="{{ prefix }}-description-hint">Maximum 500 characters.</span>{% endif %}
     {{ field_error(prefix, 'description', task_errors.description) }}
   </div>
 
