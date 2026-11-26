@@ -1,11 +1,14 @@
 from pathlib import Path
 
 import click
-from flask import Flask, Response, current_app, g, render_template
+from flask import Flask, Response, current_app, g, render_template, request
 
 from config import DevelopmentConfig, resolve_database_path, resolve_secret_key
 
 from . import database
+from .date_service import local_today
+from .task_service import list_tasks
+from .validators import ValidationError, validate_filters
 
 
 def get_db():
@@ -52,7 +55,41 @@ def create_app(config_class=DevelopmentConfig):
 
     @app.get("/")
     def dashboard():
-        return render_template("dashboard.html")
+        submitted_filters = {}
+        errors = {}
+        for field in ("status", "priority"):
+            values = request.args.getlist(field)
+            if len(values) > 1:
+                errors[field] = "Submit this value only once."
+            elif values:
+                submitted_filters[field] = values[0]
+
+        try:
+            filters = validate_filters(submitted_filters)
+        except ValidationError as error:
+            errors.update(error.errors)
+
+        today = local_today(current_app.config["TIMEZONE"])
+        if errors:
+            filters = {"status": "All", "priority": "All"}
+            tasks = []
+            due_today_tasks = []
+            status = 400
+        else:
+            result = list_tasks(get_db(), filters, today)
+            tasks = result.tasks
+            due_today_tasks = result.due_today_tasks
+            status = 200
+
+        return render_template(
+            "dashboard.html",
+            tasks=tasks,
+            due_today_tasks=due_today_tasks,
+            today=today,
+            filters=filters,
+            form_values={"title": "", "description": "", "due_date": "", "priority": "Medium"},
+            errors=errors,
+        ), status
 
     @app.get("/health")
     def health():

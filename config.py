@@ -4,6 +4,7 @@ from pathlib import Path
 
 class DevelopmentConfig:
     TESTING = False
+    TIMEZONE = "Asia/Kolkata"
 
 
 class TestingConfig(DevelopmentConfig):

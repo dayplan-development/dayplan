@@ -1,10 +1,12 @@
+from datetime import date
 from unittest.mock import Mock, call
 
 import pytest
-from flask import Flask, g
+from flask import Flask, g, template_rendered
 
+import dayplan
 from config import TestingConfig as AppTestingConfig
-from dayplan import close_db, create_app, database, get_db
+from dayplan import close_db, create_app, database, get_db, task_service
 
 
 @pytest.fixture
@@ -25,6 +27,52 @@ def database_helpers(monkeypatch):
     monkeypatch.setattr(database, "get_connection", opener, raising=False)
     monkeypatch.setattr(database, "close_connection", closer, raising=False)
     return opener, closer
+
+
+@pytest.fixture
+def dashboard_app(app, tmp_path, monkeypatch):
+    database_path = str(tmp_path / "dashboard.sqlite3")
+    database.initialize_database(database_path)
+    app.config["DATABASE_PATH"] = database_path
+    monkeypatch.setattr(dayplan, "local_today", Mock(return_value=date(2026, 11, 26)))
+    return app
+
+
+@pytest.fixture
+def populated_dashboard_app(dashboard_app):
+    with dashboard_app.app_context():
+        connection = get_db()
+        for title, priority, due_date in (
+            ("High due today", "High", "2026-11-26"),
+            ("High overdue", "High", "2026-11-25"),
+            ("Low overdue", "Low", "2026-11-25"),
+            ("Low due today", "Low", "2026-11-26"),
+            ("High due tomorrow", "High", "2026-11-27"),
+        ):
+            task_service.create_task(
+                connection, {"title": title, "priority": priority, "due_date": due_date}
+            )
+        completed = task_service.create_task(
+            connection,
+            {"title": "Completed today", "priority": "High", "due_date": "2026-11-26"},
+        )
+        task_service.complete_task(connection, completed.id, date(2026, 11, 26))
+    return dashboard_app
+
+
+def get_dashboard(app, query_string=None):
+    renders = []
+
+    def record_render(sender, template, context, **extra):
+        renders.append((template.name, context))
+
+    with template_rendered.connected_to(record_render, app):
+        response = app.test_client().get("/", query_string=query_string)
+
+    [(template_name, context)] = renders
+    assert template_name == "dashboard.html"
+    flask_keys = {"g", "request", "session"}
+    return response, {key: value for key, value in context.items() if key not in flask_keys}
 
 
 def test_create_app_loads_secret_key_from_environment(monkeypatch):
@@ -210,12 +258,113 @@ def test_init_db_reports_unavailable_initializer(app, monkeypatch):
     assert result.output == "Error: Database initialization is unavailable.\n"
 
 
-def test_dashboard_renders_placeholder(client):
-    response = client.get("/")
+def test_dashboard_renders_placeholder_with_default_context(dashboard_app, monkeypatch):
+    list_tasks = Mock(wraps=dayplan.list_tasks)
+    monkeypatch.setattr(dayplan, "list_tasks", list_tasks)
+
+    response, context = get_dashboard(dashboard_app)
 
     assert response.status_code == 200
     assert response.mimetype == "text/html"
     assert b"<h1>DayPlan</h1>" in response.data
+    assert context == {
+        "tasks": [],
+        "due_today_tasks": [],
+        "today": date(2026, 11, 26),
+        "filters": {"status": "All", "priority": "All"},
+        "form_values": {"title": "", "description": "", "due_date": "", "priority": "Medium"},
+        "errors": {},
+    }
+    dayplan.local_today.assert_called_once_with("Asia/Kolkata")
+    list_tasks.assert_called_once()
+
+
+def test_dashboard_applies_status_and_priority_together(populated_dashboard_app):
+    response, context = get_dashboard(
+        populated_dashboard_app, {"status": "Overdue", "priority": "High"}
+    )
+
+    assert response.status_code == 200
+    assert context["filters"] == {"status": "Overdue", "priority": "High"}
+    [task_view] = context["tasks"]
+    assert task_view.task.title == "High overdue"
+    assert task_view.is_overdue
+    assert context["due_today_tasks"] == []
+
+
+def test_dashboard_pending_includes_overdue(populated_dashboard_app):
+    response, context = get_dashboard(
+        populated_dashboard_app, {"status": "Pending", "priority": "High"}
+    )
+
+    assert response.status_code == 200
+    assert {view.task.title for view in context["tasks"]} == {
+        "High due today",
+        "High overdue",
+        "High due tomorrow",
+    }
+
+
+def test_dashboard_due_today_contains_only_matching_pending_tasks(populated_dashboard_app):
+    response, context = get_dashboard(populated_dashboard_app, {"priority": "High"})
+
+    assert response.status_code == 200
+    assert "Completed today" in {view.task.title for view in context["tasks"]}
+    [due_today] = context["due_today_tasks"]
+    assert due_today.task.title == "High due today"
+    assert due_today.task.status == "Pending"
+    assert due_today.task.due_date == context["today"]
+    assert due_today.is_due_today
+
+
+def test_dashboard_valid_filters_with_no_matches_return_empty_lists(populated_dashboard_app):
+    response, context = get_dashboard(
+        populated_dashboard_app, {"status": "Completed", "priority": "Low"}
+    )
+
+    assert response.status_code == 200
+    assert context["tasks"] == []
+    assert context["due_today_tasks"] == []
+    assert context["errors"] == {}
+
+
+@pytest.mark.parametrize(
+    ("query_string", "errors"),
+    [
+        ("status=", {"status": "Choose a valid status filter."}),
+        ("priority=high", {"priority": "Choose a valid priority filter."}),
+        ("status=Pending&status=Completed", {"status": "Submit this value only once."}),
+        ("priority=Low&priority=High", {"priority": "Submit this value only once."}),
+    ],
+)
+def test_dashboard_invalid_filters_do_not_open_database(
+    dashboard_app, monkeypatch, query_string, errors
+):
+    opener = Mock(side_effect=AssertionError("Invalid filters must not open SQLite"))
+    monkeypatch.setattr(database, "get_connection", opener)
+
+    response, context = get_dashboard(dashboard_app, query_string)
+
+    assert response.status_code == 400
+    assert response.mimetype == "text/html"
+    assert context["filters"] == {"status": "All", "priority": "All"}
+    assert context["tasks"] == []
+    assert context["due_today_tasks"] == []
+    assert context["errors"] == errors
+    opener.assert_not_called()
+    dayplan.local_today.assert_called_once_with("Asia/Kolkata")
+
+
+def test_dashboard_unexpected_service_error_returns_generic_500(dashboard_app, monkeypatch):
+    dashboard_app.config["PROPAGATE_EXCEPTIONS"] = False
+    monkeypatch.setattr(
+        dayplan, "list_tasks", Mock(side_effect=RuntimeError("Private database detail"))
+    )
+
+    response = dashboard_app.test_client().get("/")
+
+    assert response.status_code == 500
+    assert response.get_data(as_text=True).strip() == "Internal server error."
 
 
 def test_health_returns_ok(client):
