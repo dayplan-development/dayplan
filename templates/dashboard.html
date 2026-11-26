@@ -22,7 +22,21 @@
   </article>
 {% endmacro %}
 
+{% macro input_value(value) -%}
+  {{ value if value is string else value|first|default('') }}
+{%- endmacro %}
+
+{% macro error_attributes(field, message) -%}
+  {% if message %} aria-invalid="true" aria-describedby="create-{{ field }}-error"{% endif %}
+{%- endmacro %}
+
+{% macro field_error(field, message) -%}
+  {% if message %}<p class="field-error" id="create-{{ field }}-error">{{ message }}</p>{% endif %}
+{%- endmacro %}
+
 {% block content %}
+{% set navigation_errors = filter_errors|default(errors) %}
+{% set task_errors = errors if filter_errors is defined else {} %}
 <section class="page-intro">
   <h2>Your day</h2>
   <p>Tasks, deadlines and follow-ups in one calm place.</p>
@@ -30,26 +44,74 @@
 
 <form class="filters" method="get" action="{{ url_for('dashboard') }}">
   <label>Status
-    <select name="status"{% if errors.status %} aria-invalid="true" aria-describedby="status-error"{% endif %}>
+    <select name="status"{% if navigation_errors.status %} aria-invalid="true" aria-describedby="status-error"{% endif %}>
       {% for option in ('All', 'Pending', 'Completed', 'Overdue') %}
       <option value="{{ option }}"{% if filters.status == option %} selected{% endif %}>{{ option }}</option>
       {% endfor %}
     </select>
-    {% if errors.status %}<span class="field-error" id="status-error">{{ errors.status }}</span>{% endif %}
+    {% if navigation_errors.status %}<span class="field-error" id="status-error">{{ navigation_errors.status }}</span>{% endif %}
   </label>
   <label>Priority
-    <select name="priority"{% if errors.priority %} aria-invalid="true" aria-describedby="priority-error"{% endif %}>
+    <select name="priority"{% if navigation_errors.priority %} aria-invalid="true" aria-describedby="priority-error"{% endif %}>
       {% for option in ('All', 'High', 'Medium', 'Low') %}
       <option value="{{ option }}"{% if filters.priority == option %} selected{% endif %}>{{ option }}</option>
       {% endfor %}
     </select>
-    {% if errors.priority %}<span class="field-error" id="priority-error">{{ errors.priority }}</span>{% endif %}
+    {% if navigation_errors.priority %}<span class="field-error" id="priority-error">{{ navigation_errors.priority }}</span>{% endif %}
   </label>
   <button class="btn btn-ghost" type="submit">Apply</button>
   <a class="filter-reset" href="{{ url_for('dashboard') }}">Reset</a>
 </form>
 
-{% if not errors %}
+<form class="form-card" method="post" aria-labelledby="new-task-heading"
+      action="{{ url_for('create_task', status=filters.status if filters.status != 'All' else none,
+                         priority=filters.priority if filters.priority != 'All' else none) }}">
+  <h2 id="new-task-heading">New task</h2>
+
+  <div class="field{% if task_errors.title %} has-error{% endif %}">
+    <label for="create-title">Title <span class="required" aria-hidden="true">*</span></label>
+    <input id="create-title" name="title" type="text" required maxlength="100"
+           value="{{ input_value(form_values.title) }}"{{ error_attributes('title', task_errors.title) }}>
+    {{ field_error('title', task_errors.title) }}
+  </div>
+
+  <div class="field{% if task_errors.description %} has-error{% endif %}">
+    <label for="create-description">Description (optional)</label>
+    <textarea id="create-description" name="description" rows="4" maxlength="500"{{ error_attributes('description', task_errors.description) }}>
+{{ input_value(form_values.description) }}</textarea>
+    {{ field_error('description', task_errors.description) }}
+  </div>
+
+  <div class="field-row">
+    {% set priorities = ('Low', 'Medium', 'High') %}
+    {% set selected_priority = input_value(form_values.priority) %}
+    <div class="field{% if task_errors.priority %} has-error{% endif %}">
+      <label for="create-priority">Priority</label>
+      <select id="create-priority" name="priority"{{ error_attributes('priority', task_errors.priority) }}>
+        {% if selected_priority not in priorities %}
+        <option value="{{ selected_priority }}" selected>{{ selected_priority or 'Choose a priority' }}</option>
+        {% endif %}
+        {% for option in priorities %}
+        <option value="{{ option }}"{% if selected_priority == option %} selected{% endif %}>{{ option }}</option>
+        {% endfor %}
+      </select>
+      {{ field_error('priority', task_errors.priority) }}
+    </div>
+
+    <div class="field{% if task_errors.due_date %} has-error{% endif %}">
+      <label for="create-due-date">Due date (optional)</label>
+      <input id="create-due-date" name="due_date" type="text" inputmode="numeric" placeholder="YYYY-MM-DD"
+             value="{{ input_value(form_values.due_date) }}"{{ error_attributes('due-date', task_errors.due_date) }}>
+      {{ field_error('due-date', task_errors.due_date) }}
+    </div>
+  </div>
+
+  <div class="form-actions">
+    <button class="btn btn-primary" type="submit">Add task</button>
+  </div>
+</form>
+
+{% if not navigation_errors %}
 <section aria-labelledby="due-today-heading">
   <h2 id="due-today-heading">Pending due today</h2>
   <div class="task-list">

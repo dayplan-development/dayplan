@@ -189,7 +189,7 @@ h1, h2, h3 {
 .badge-status { background: transparent; color: rgba(37,37,34,0.75); }
 .badge-overdue { background: transparent; color: var(--burgundy); border-color: var(--burgundy); }
 
-.task-title { margin: 0 0 0.25rem; font-size: 1.2rem; }
+.task-title { margin: 0 0 0.25rem; font-size: 1.2rem; overflow-wrap: anywhere; }
 .task-desc { margin: 0 0 0.5rem; color: rgba(37,37,34,0.75); }
 .task-meta { margin: 0; display: flex; flex-wrap: wrap; gap: 1rem; font-size: 0.85rem; color: rgba(37,37,34,0.65); }
 

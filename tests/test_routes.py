@@ -3,6 +3,7 @@ from unittest.mock import Mock, call
 
 import pytest
 from flask import Flask, g, template_rendered
+from werkzeug.datastructures import MultiDict
 
 import dayplan
 from config import TestingConfig as AppTestingConfig
@@ -61,18 +62,27 @@ def populated_dashboard_app(dashboard_app):
 
 
 def get_dashboard(app, query_string=None):
+    return request_dashboard(app, "/", query_string=query_string)
+
+
+def request_dashboard(app, path, **kwargs):
     renders = []
 
     def record_render(sender, template, context, **extra):
         renders.append((template.name, context))
 
     with template_rendered.connected_to(record_render, app):
-        response = app.test_client().get("/", query_string=query_string)
+        response = app.test_client().open(path, **kwargs)
 
     [(template_name, context)] = renders
     assert template_name == "dashboard.html"
     flask_keys = {"g", "request", "session"}
     return response, {key: value for key, value in context.items() if key not in flask_keys}
+
+
+def saved_tasks(app):
+    with app.app_context():
+        return database.list_tasks(get_db())
 
 
 def test_create_app_loads_secret_key_from_environment(monkeypatch):
@@ -365,6 +375,190 @@ def test_dashboard_unexpected_service_error_returns_generic_500(dashboard_app, m
 
     assert response.status_code == 500
     assert response.get_data(as_text=True).strip() == "Internal server error."
+
+
+def test_post_tasks_persists_approved_fields_and_redirects_with_filters(dashboard_app, monkeypatch):
+    create = Mock(wraps=task_service.create_task)
+    monkeypatch.setattr(task_service, "create_task", create)
+    client = dashboard_app.test_client()
+    fields = {"title": "  Write notes  ", "description": "  Draft  ", "priority": "Low"}
+
+    response = client.post(
+        "/tasks?status=Pending&priority=High&unrelated=ignored",
+        data={**fields, "status": "Completed", "id": "42"},
+    )
+
+    assert response.status_code == 303
+    assert response.headers["Location"] == "/?status=Pending&priority=High"
+    assert create.call_count == 1
+    assert create.call_args.args[1] == fields
+    [task] = saved_tasks(dashboard_app)
+    assert (task.title, task.description, task.priority) == ("Write notes", "Draft", "Low")
+    assert task.status == "Pending"
+    assert task.completed_on is None
+    with client.session_transaction() as session:
+        assert session["_flashes"] == [("success", "Task added.")]
+    dayplan.local_today.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    ("query", "location", "due_date", "expected_date"),
+    [
+        ("", "/", None, None),
+        ("?status=All&priority=High", "/?priority=High", "2026-01-01", date(2026, 1, 1)),
+        ("?status=Pending&priority=All", "/?status=Pending", "2024-02-29", date(2024, 2, 29)),
+    ],
+)
+def test_post_tasks_defaults_priority_and_accepts_calendar_dates(
+    dashboard_app, query, location, due_date, expected_date
+):
+    fields = {"title": "Plan project"}
+    if due_date is not None:
+        fields["due_date"] = due_date
+
+    response = dashboard_app.test_client().post(f"/tasks{query}", data=fields)
+
+    assert response.status_code == 303
+    assert response.headers["Location"] == location
+    [task] = saved_tasks(dashboard_app)
+    assert task.priority == "Medium"
+    assert task.due_date == expected_date
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("priority", "", "Choose Low, Medium, or High."),
+        ("priority", "Urgent", "Choose Low, Medium, or High."),
+        ("due_date", "26/11/2026", "Enter a valid date in YYYY-MM-DD format."),
+        ("due_date", "2026-02-30", "Enter a valid date in YYYY-MM-DD format."),
+        ("title", "  \t ", "Enter a title."),
+        ("title", "x" * 101, "Use 100 characters or fewer."),
+        ("description", "x" * 501, "Use 500 characters or fewer."),
+    ],
+)
+def test_post_tasks_invalid_fields_preserve_values_and_filtered_dashboard(
+    populated_dashboard_app, field, value, message
+):
+    fields = {"title": "  Draft  ", "description": " Notes ", "due_date": "", "priority": "Low"}
+    fields[field] = value
+    before = saved_tasks(populated_dashboard_app)
+
+    response, context = request_dashboard(
+        populated_dashboard_app, "/tasks?status=Pending&priority=High", method="POST", data=fields
+    )
+
+    assert response.status_code == 400
+    assert context["form_values"] == fields
+    assert context["errors"] == {field: message}
+    assert context["filter_errors"] == {}
+    assert context["filters"] == {"status": "Pending", "priority": "High"}
+    assert context["today"] == date(2026, 11, 26)
+    assert {row.task.title for row in context["tasks"]} == {
+        "High due today",
+        "High overdue",
+        "High due tomorrow",
+    }
+    assert [row.task.title for row in context["due_today_tasks"]] == ["High due today"]
+    assert saved_tasks(populated_dashboard_app) == before
+    dayplan.local_today.assert_called_once_with("Asia/Kolkata")
+
+
+@pytest.mark.parametrize("field", ["title", "description", "due_date", "priority"])
+def test_post_tasks_rejects_duplicate_fields(dashboard_app, monkeypatch, field):
+    create = Mock(wraps=task_service.create_task)
+    monkeypatch.setattr(task_service, "create_task", create)
+    fields = MultiDict({"title": "Draft", "description": "Notes", "due_date": "", "priority": "Low"})
+    fields.add(field, "Second value")
+
+    response, context = request_dashboard(dashboard_app, "/tasks", method="POST", data=fields)
+
+    assert response.status_code == 400
+    assert context["errors"] == {field: "Submit this value only once."}
+    assert context["form_values"][field] == fields.getlist(field)
+    assert context["filter_errors"] == {}
+    create.assert_not_called()
+    assert saved_tasks(dashboard_app) == []
+
+
+@pytest.mark.parametrize(
+    ("query", "filter_errors"),
+    [
+        ("status=Pending&status=Pending", {"status": "Submit this value only once."}),
+        ("priority=Low&priority=High", {"priority": "Submit this value only once."}),
+        (
+            "status=Invalid&priority=",
+            {
+                "status": "Choose a valid status filter.",
+                "priority": "Choose a valid priority filter.",
+            },
+        ),
+    ],
+)
+def test_post_tasks_rejects_invalid_filters_without_calling_service(
+    dashboard_app, monkeypatch, query, filter_errors
+):
+    create = Mock(wraps=task_service.create_task)
+    monkeypatch.setattr(task_service, "create_task", create)
+    fields = {"title": "Draft", "description": "", "due_date": "bad date", "priority": ""}
+
+    response, context = request_dashboard(
+        dashboard_app, f"/tasks?{query}", method="POST", data=fields
+    )
+
+    assert response.status_code == 400
+    assert context["form_values"] == fields
+    assert context["errors"] == {
+        "due_date": "Enter a valid date in YYYY-MM-DD format.",
+        "priority": "Choose Low, Medium, or High.",
+    }
+    assert context["filter_errors"] == filter_errors
+    assert context["filters"] == {"status": "All", "priority": "All"}
+    assert context["tasks"] == context["due_today_tasks"] == []
+    create.assert_not_called()
+    assert saved_tasks(dashboard_app) == []
+    dayplan.local_today.assert_called_once_with("Asia/Kolkata")
+
+
+def test_post_tasks_invalid_filter_blocks_valid_task_without_opening_database(
+    dashboard_app, monkeypatch
+):
+    create = Mock(wraps=task_service.create_task)
+    monkeypatch.setattr(task_service, "create_task", create)
+    opener = Mock(side_effect=AssertionError("Invalid filters must not open SQLite"))
+    with monkeypatch.context() as patch:
+        patch.setattr(database, "get_connection", opener)
+        response, context = request_dashboard(
+            dashboard_app, "/tasks?status=Invalid", method="POST", data={"title": "Draft"}
+        )
+
+    assert response.status_code == 400
+    assert context["errors"] == {}
+    assert context["filter_errors"] == {"status": "Choose a valid status filter."}
+    assert context["form_values"] == {"title": "Draft", "description": "", "due_date": "", "priority": ""}
+    opener.assert_not_called()
+    create.assert_not_called()
+    assert saved_tasks(dashboard_app) == []
+
+
+def test_post_tasks_failed_write_returns_generic_500_without_success_flash(dashboard_app):
+    dashboard_app.config["PROPAGATE_EXCEPTIONS"] = False
+    with dashboard_app.app_context():
+        connection = get_db()
+        connection.execute(
+            """CREATE TRIGGER reject_task BEFORE INSERT ON tasks
+               BEGIN SELECT RAISE(ABORT, 'Private database detail'); END"""
+        )
+        connection.commit()
+    client = dashboard_app.test_client()
+
+    response = client.post("/tasks", data={"title": "Draft"})
+
+    assert response.status_code == 500
+    assert response.get_data(as_text=True).strip() == "Internal server error."
+    assert saved_tasks(dashboard_app) == []
+    with client.session_transaction() as session:
+        assert "_flashes" not in session
 
 
 def test_health_returns_ok(client):
