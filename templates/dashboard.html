@@ -3,6 +3,7 @@
 {% block title %}DayPlan | Dashboard{% endblock %}
 
 {% block content %}
+{% set task_base = task_base_url|default('/tasks') %}
 
 {# TEMPORARY SAMPLE DATA: used only until the integrator passes real data #}
 {% if tasks is not defined %}
@@ -84,7 +85,7 @@
         {% if task.completed_at %}<span>Completed {{ task.completed_at }}</span>{% endif %}
       </p>
     </div>
-    <div class="task-actions">
+        <div class="task-actions">
       {% if task.status != 'completed' %}
         <a class="btn btn-small btn-primary" href="#">Complete</a>
         <a class="btn btn-small btn-ghost" href="#">Edit</a>
