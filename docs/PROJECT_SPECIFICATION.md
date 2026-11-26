@@ -5,7 +5,7 @@ Plan your day. Own your time.
 
 Shiv Nadar University Chennai · 25IT1833 – Open-Source Tools and Prompt Engineering · Exercises 9 and 10
 
-**Status:** Approved Phase 2 baseline. The requirements describe target behavior for implementation. The assignment requirements come from the supplied brief.
+**Status:** Approved Phase 2 requirements, with implementation status updated for Phase 3.2H. The assignment requirements come from the supplied brief.
 
 ## 1. Overview and objectives
 
@@ -13,7 +13,9 @@ DayPlan helps a user organize tasks, deadlines, and follow-up activities. The us
 
 The project also demonstrates reusable Python functions and modules, input validation, exception handling, automated tests, structured prompting with verification, and collaboration by three contributors using GitHub.
 
-The current repository has a Flask app factory, development and test configuration, a placeholder dashboard, a health endpoint, 404 and 500 handlers, and tests for those routes and static files. Task, database, analytics, and validation modules are empty. Task management, reporting, and CI are planned deliverables.
+The current checkout implements the Flask dashboard and SQLite-backed task creation, viewing, editing, completion, and deletion with browser confirmation. Users can set due dates and priorities, combine status and priority filters, and distinguish overdue tasks from Pending tasks due today. The daily and weekly summaries use all saved tasks. Flask also provides a database initialization command, a health endpoint, and generic 404 and 500 responses.
+
+Pytest covers backend logic, persistence, and Flask routes with real templates. The repository includes a GitHub Actions test workflow. Live GitHub checks, protection settings, and release evidence still require verification. The local demo is the baseline. Render remains optional, and hosted deployment is unverified.
 
 ## 2. Scope
 

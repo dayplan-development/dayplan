@@ -1,8 +1,8 @@
 # DayPlan frontend and service contract
 
-Daily Task and Reminder Manager · Phase 2 implementation contract
+Daily Task and Reminder Manager · Approved Phase 2 contract, implementation updated for Phase 3.2H
 
-This contract follows the [project specification](PROJECT_SPECIFICATION.md), [architecture](ARCHITECTURE.md), and [database schema](DATABASE_SCHEMA.md). The repository currently has a placeholder dashboard, health endpoint, static-file handling, and 404/500 handlers. The task and summary routes, service signatures, and response examples describe planned implementation of the approved product baseline.
+This contract follows the [project specification](PROJECT_SPECIFICATION.md), [architecture](ARCHITECTURE.md), and [database schema](DATABASE_SCHEMA.md). The dashboard, task routes, daily and weekly summaries, health endpoint, static files, and generic error handlers are implemented. The examples illustrate the approved behavior.
 
 ## 1. Communication and ownership
 
@@ -39,7 +39,7 @@ Both filters are optional query parameters. Read them from the URL query alone. 
 | `status` | `All`, `Pending`, `Completed`, `Overdue` | Omitted means `All`. Pending includes overdue tasks. Overdue selects only Pending tasks with a due date before today. |
 | `priority` | `All`, `Low`, `Medium`, `High` | Omitted means `All`. A selected priority matches that exact value. |
 
-Both active filters must match. The route passes the two values to the service. Invalid, blank, or repeated filter values produce a 400 HTML response, with feedback identifying the filter and a link to the unfiltered dashboard. A write request with invalid filter parameters performs no write. Create and edit error responses preserve submitted task fields and use clean filter defaults for form actions. Other routes can show a simple error page. Text search and reopening are outside the initial implementation.
+Both active filters must match when listing tasks on the dashboard. Summary calculations use all tasks, and the summaries page uses filters for return navigation. Invalid, blank, or repeated filter values produce an HTTP 400 HTML response with filter feedback and a link to the unfiltered dashboard. A write request with invalid filters performs no write. Create and edit preserve the submitted task fields and reset invalid filters to `All` for the form action. If only the task fields are invalid, active filters are preserved. Complete, delete, and summaries reuse the dashboard's filter error view. For edit, a missing task returns 404 even when the form or filters are invalid. Text search and reopening are outside the initial implementation.
 
 ## 3. Route contract
 
@@ -57,8 +57,11 @@ Both active filters must match. The route passes the two values to the service. 
 | `POST /tasks/<int:task_id>/complete` | Mark a task completed. `complete_task` | Required ID. Filters optional. No task form fields or client-supplied completion date. | `complete_task` | Flash “Task completed.” after a committed change, or “Task is already completed.” on a repeat. Return 303 to the dashboard with active filters. | 400 invalid filters, 404 invalid or missing ID, 500 unexpected failure. |
 | `GET /summaries#daily` | View the daily section of `summaries`. The browser requests `GET /summaries`. | Filters optional for the back link. No date parameter. | `get_summaries` | 200 HTML with both summaries. The browser jumps to `#daily`. No redirect. | 400 invalid filters, 500 unexpected failure. |
 | `GET /summaries#weekly` | View the weekly section of `summaries`. The browser requests `GET /summaries`. | Filters optional for the back link. No week parameter. | `get_summaries` | 200 HTML with both summaries. The browser jumps to `#weekly`. No redirect. | 400 invalid filters, 500 unexpected failure. |
+| `GET /health` | Liveness check. `health` | None. | None. | 200 JSON with `{"status": "ok"}`. | Independent of the task database. |
 
 Filtering uses one dashboard endpoint. Daily and weekly reports use one summaries endpoint and a single read of the task list. A fragment such as `#weekly` selects a location on the rendered page and is never sent to Flask. The date service uses `Asia/Kolkata` through `ZoneInfo` and the required `tzdata` dependency. Reports use the current local date and the inclusive Monday–Sunday week.
+
+For a new local database, set `SECRET_KEY` and run `flask --app app init-db` before opening task or summary pages. The command initializes the resolved `DATABASE_PATH`, which defaults to `instance/dayplan.sqlite3`, and preserves records on repeated runs of the same schema. See the [README](../README.md) for setup commands.
 
 ## 4. Backend service contract
 
@@ -84,7 +87,7 @@ Functions below live in `dayplan/task_service.py` unless stated otherwise. `db` 
 | Function | Inputs and responsibility | Result |
 |---|---|---|
 | `validate_filters(values)` | In `dayplan/validators.py`. Validate submitted query values and supply All defaults. | A pair of normalized values keyed by `status` and `priority`, or `ValidationError`. |
-| `list_tasks(db, filters, today)` | Read tasks, apply the chosen filters, derive display flags, and collect the actionable due-today subset. | `DashboardTasks` with `tasks` and `due_today_tasks`, each a list of `TaskView` objects. Default ordering is open. |
+| `list_tasks(db, filters, today)` | Read tasks, apply the chosen filters, derive display flags, and collect the actionable due-today subset. | `DashboardTasks` with `tasks` and `due_today_tasks`, each a list of `TaskView` objects in ascending task ID order. |
 | `get_task(db, task_id)` | Fetch one saved task for the edit form. | `Task` or `TaskNotFound`. |
 | `create_task(db, fields)` | Validate create fields and coordinate a Pending insert. | Saved `Task` after commit or `ValidationError`. |
 | `update_task(db, task_id, fields)` | Validate edits and update only editable fields. Preserve ID, creation timestamp, status, and completion date. Compare normalized editable values with the saved row before writing. | A result containing `task` and `changed` (true for a committed edit, false for an identical edit), or `TaskNotFound` or `ValidationError`. |
@@ -99,7 +102,8 @@ The validator owns task-field and filter rules. The date service owns the overdu
 - **Validation.** A `ValidationError` carries an `errors` mapping of field or parameter name to one user-facing string. Flask can use the same format for a repeated form field detected during parsing. Example: `{"title": "Enter a title.", "due_date": "Enter a valid date in YYYY-MM-DD format."}`. Return 400 HTML with visible feedback and the submitted form values. An absent field is shown as blank when re-rendering. Do not write or redirect on validation failure.
 - **Missing task.** The service raises `TaskNotFound` for a valid-looking ID with no task. Flask maps it to 404, as it does for an invalid task ID. A repeated completion of an existing task is a successful no-op.
 - **Unexpected failure.** The database layer rolls back an open write transaction on failure. Allow the error to reach Flask for server-side logging and a generic 500 response. Keep SQL, file paths, credentials, and tracebacks out of the HTML. No success message is sent if a write fails.
-- **Flash conventions.** The route flashes short plain-text messages after a successful action or a no-op result. Use category `success` for a committed create, update, delete, or completion and `info` for an identical edit or already-completed result. Render the messages once on the redirected page. Field errors belong next to their controls. Load `SECRET_KEY` from the environment in development, testing, and deployment. Tests set a separate test-only environment value before building the app. The current foundation has no key. Check for a configured key before enabling task writes so a missing key cannot fail after commit. Keep production secrets out of source control.
+- **Flash conventions.** Flask flashes short plain-text messages after a committed create, update, delete, or completion using `success`, and for an identical edit or already-completed result using `info`. The shared base template renders them once on the redirected page. Field errors appear next to their controls.
+- **Session configuration.** The factory requires a nonblank `SECRET_KEY` before startup. It uses an explicit config value when supplied and otherwise reads the environment. Development and deployment supply distinct environment secrets. Tests use test-only values. Keep production secrets out of source control.
 
 ## 6. Jinja template context and navigation
 
@@ -111,11 +115,12 @@ The validator owns task-field and filter rules. The date service owns the overdu
 | `due_today_tasks` | The server-selected Pending subset due today, using the same active filters. |
 | `today` | The request's project-local date. |
 | `filters` | Validated `status` and `priority` selections, including All defaults. |
-| `form_values` | On the initial dashboard, use empty fields with Medium priority. For a rejected create or edit, use the original submitted strings. For the edit GET, use the saved values with an ISO due date or an empty string. |
-| `errors` | Field or filter feedback. An empty mapping on a normal render. |
+| `form_values` | The initial dashboard uses empty fields with Medium priority. A rejected create or edit preserves raw submitted strings and uses a blank for absent fields. Repeated values are kept in the context as a list, and the form displays the first with the duplicate-field error. Edit GET uses the saved values with an ISO due date or a blank. |
+| `errors` | Task-field feedback on create and edit. Dashboard filter errors also use this mapping when no `filter_errors` key is supplied. Empty for a normal render. |
+| `filter_errors` | Separate URL filter feedback on rejected create requests and edit form renders. Keeps the URL and body `priority` errors distinct. |
 | `task` | Saved `Task` on the edit page, used to identify the form target. |
 
-The edit form uses `task`, `filters`, `form_values`, and `errors`. If an edit is rejected and its task can no longer be loaded, return 404. On the dashboard, show filter errors before any empty-list message so a rejected query is not mistaken for a valid search with no matches.
+The create form is part of `dashboard.html`. `task_form.html` uses `task`, `filters`, `form_values`, `errors`, and `filter_errors` and reuses the dashboard's field markup. Both forms use a text field for due dates so a malformed value can be shown after validation fails. If a rejected edit's task can no longer be loaded, Flask returns 404. The dashboard shows filter feedback and suppresses empty-list text for invalid queries.
 
 Use the `is_overdue` flag to display a visible **Overdue** label, with color as a secondary cue. Display **Due today** for the actionable due-today flag. Keep the stored Pending or Completed status visible separately. Render user-entered text with normal Jinja escaping.
 
@@ -211,4 +216,4 @@ completion_rate: 33.33333333333333
 - Verify both report contexts are unchanged by dashboard filters. Check an empty database, a week with tasks outside it only, and a nonempty week with zero completions. The former two display “No tasks due” and the last displays 0.0%.
 - Check that a successful write flashes its outcome once after the redirect. Use an environment-supplied test secret and an initialized temporary database.
 
-Confirm list order and the confirmation UI during implementation. Local demo is the baseline. Review access and form protection if Render is selected.
+The current task order is ascending ID. The Delete form uses a native browser confirmation dialog. Local demo is the baseline. Review access and form protection if Render is selected.

@@ -1,12 +1,13 @@
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing, contextmanager
-from datetime import date
+from datetime import date, datetime, timezone
 import sqlite3
 from threading import Barrier
 
 import pytest
 
 from dayplan import analytics, database, task_service
+from dayplan.date_service import local_today
 from dayplan.validators import TaskNotFound, ValidationError, validate_filters
 
 
@@ -63,6 +64,99 @@ def test_daily_and_weekly_summaries_use_status_and_due_date(db):
     assert summaries["weekly"]["due_total"] == 3
     assert summaries["weekly"]["due_completed"] == 1
     assert summaries["weekly"]["completion_rate"] == pytest.approx(33.3333333333)
+
+
+def test_daily_summary_counts_completed_tasks_by_due_and_completion_dates(db):
+    today = date(2026, 11, 21)
+    due_today = task_service.create_task(db, {"title": "Due today", "due_date": "2026-11-21"})
+    past_due = task_service.create_task(db, {"title": "Finished late", "due_date": "2026-11-20"})
+    task_service.create_task(db, {"title": "Still overdue", "due_date": "2026-11-20"})
+    task_service.complete_task(db, due_today.id, today)
+    task_service.complete_task(db, past_due.id, today)
+
+    assert task_service.get_summaries(db, today)["daily"] == {
+        "date": today,
+        "due_total": 1,
+        "due_pending": 0,
+        "due_completed": 1,
+        "overdue": 1,
+        "completed_today": 2,
+    }
+
+
+@pytest.mark.parametrize(
+    ("utc_minute", "expected_date"),
+    [(29, date(2026, 11, 21)), (30, date(2026, 11, 22))],
+    ids=["before-local-midnight", "at-local-midnight"],
+)
+def test_local_today_rolls_over_at_kolkata_midnight(monkeypatch, utc_minute, expected_date):
+    instant = datetime(2026, 11, 21, 18, utc_minute, tzinfo=timezone.utc)
+
+    class FixedDatetime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            assert tz is not None
+            return instant.astimezone(tz)
+
+    monkeypatch.setattr("datetime.datetime", FixedDatetime)
+
+    assert local_today("Asia/Kolkata") == expected_date
+
+
+def test_weekly_summary_includes_both_boundaries_across_years(db):
+    today = date(2025, 1, 1)
+    for title, due_date in (
+        ("Previous Sunday", "2024-12-29"),
+        ("First day of this week", "2024-12-30"),
+        ("Last day of this week", "2025-01-05"),
+        ("Next Monday", "2025-01-06"),
+    ):
+        task_service.create_task(db, {"title": title, "due_date": due_date})
+    task_service.create_task(db, {"title": "Undated"})
+    completed = task_service.create_task(db, {"title": "Finished late", "due_date": "2024-12-31"})
+    task_service.complete_task(db, completed.id, today)
+    completed_early = task_service.create_task(db, {"title": "Finished early", "due_date": "2025-01-02"})
+    task_service.complete_task(db, completed_early.id, date(2024, 12, 29))
+
+    assert task_service.get_summaries(db, today)["weekly"] == {
+        "week_start": date(2024, 12, 30),
+        "week_end": date(2025, 1, 5),
+        "due_total": 4,
+        "due_pending": 2,
+        "due_completed": 2,
+        "overdue": 1,
+        "completion_rate": 50.0,
+    }
+
+
+@pytest.mark.parametrize("due_date", [None, "2026-11-15", "2026-11-23"])
+def test_weekly_summary_has_no_rate_when_no_tasks_are_due(db, due_date):
+    if due_date is not None:
+        task_service.create_task(db, {"title": "Due outside this week", "due_date": due_date})
+
+    assert task_service.get_summaries(db, date(2026, 11, 21))["weekly"] == {
+        "week_start": date(2026, 11, 16),
+        "week_end": date(2026, 11, 22),
+        "due_total": 0,
+        "due_pending": 0,
+        "due_completed": 0,
+        "overdue": 0,
+        "completion_rate": None,
+    }
+
+
+def test_weekly_summary_returns_zero_rate_when_due_tasks_are_all_pending(db):
+    task_service.create_task(db, {"title": "Still pending", "due_date": "2026-11-21"})
+
+    assert task_service.get_summaries(db, date(2026, 11, 21))["weekly"] == {
+        "week_start": date(2026, 11, 16),
+        "week_end": date(2026, 11, 22),
+        "due_total": 1,
+        "due_pending": 1,
+        "due_completed": 0,
+        "overdue": 0,
+        "completion_rate": 0.0,
+    }
 
 
 def test_initialize_database_preserves_saved_tasks_when_reopened(tmp_path):

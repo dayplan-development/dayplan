@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+
+{% block title %}DayPlan | Summaries{% endblock %}
+
+{% macro stat(label, value, alert=false) %}
+  <div class="stat{% if alert %} stat-alert{% endif %}">
+    <dt class="stat-label">{{ label }}</dt>
+    <dd class="task-meta"><span class="stat-value">{{ value }}</span></dd>
+  </div>
+{% endmacro %}
+
+{% block content %}
+<div class="page-intro">
+  <h2>Summaries</h2>
+</div>
+
+<nav class="filters" aria-label="Summary navigation">
+  <a class="btn btn-ghost"
+     href="{{ url_for('dashboard', status=filters.status if filters.status != 'All' else none,
+                      priority=filters.priority if filters.priority != 'All' else none) }}">Back to dashboard</a>
+  <a class="btn btn-ghost" href="#daily">Daily</a>
+  <a class="btn btn-ghost" href="#weekly">Weekly</a>
+</nav>
+
+<section id="daily" aria-labelledby="daily-heading">
+  <h3 id="daily-heading">Daily summary</h3>
+  <p><time datetime="{{ daily.date.isoformat() }}">{{ daily.date.strftime('%d %B %Y') }}</time></p>
+  <dl class="summary-grid">
+    {{ stat('Total tasks due today', daily.due_total) }}
+    {{ stat('Pending tasks due today', daily.due_pending) }}
+    {{ stat('Completed tasks due today', daily.due_completed) }}
+    {{ stat('Overdue tasks', daily.overdue, alert=daily.overdue > 0) }}
+    {{ stat('Tasks completed today', daily.completed_today) }}
+  </dl>
+</section>
+
+<section id="weekly" aria-labelledby="weekly-heading">
+  <h3 id="weekly-heading">Weekly summary</h3>
+  <p>
+    <time datetime="{{ weekly.week_start.isoformat() }}">{{ weekly.week_start.strftime('%d %B %Y') }}</time>
+    to <time datetime="{{ weekly.week_end.isoformat() }}">{{ weekly.week_end.strftime('%d %B %Y') }}</time>
+  </p>
+  <dl class="summary-grid">
+    {{ stat('Total tasks due this week', weekly.due_total) }}
+    {{ stat('Pending tasks due this week', weekly.due_pending) }}
+    {{ stat('Completed tasks due this week', weekly.due_completed) }}
+    {{ stat('Overdue tasks this week', weekly.overdue, alert=weekly.overdue > 0) }}
+    <div class="stat">
+      <dt class="stat-label">Weekly completion rate</dt>
+      {% if weekly.completion_rate is none %}
+      <dd class="task-meta"><span class="stat-empty">No tasks due</span></dd>
+      {% else %}
+      <dd class="task-meta"><span class="stat-value">{{ '%.1f'|format(weekly.completion_rate) }}%</span></dd>
+      {% endif %}
+    </div>
+  </dl>
+</section>
+{% endblock %}

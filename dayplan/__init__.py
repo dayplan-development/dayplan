@@ -2,7 +2,7 @@ from pathlib import Path
 
 import click
 from flask import (
-    Flask, Response, current_app, flash, g, redirect, render_template, request, url_for,
+    Flask, Response, abort, current_app, flash, g, redirect, render_template, request, url_for,
 )
 
 from config import DevelopmentConfig, resolve_database_path, resolve_secret_key
@@ -10,10 +10,11 @@ from config import DevelopmentConfig, resolve_database_path, resolve_secret_key
 from . import database, task_service
 from .date_service import local_today
 from .task_service import list_tasks
-from .validators import ValidationError, validate_filters, validate_task_fields
+from .validators import TaskNotFound, ValidationError, validate_filters, validate_task_fields
 
 
 TASK_FIELDS = ("title", "description", "due_date", "priority")
+MAX_TASK_ID = 2**63 - 1
 
 
 def _read_single_values(source, names):
@@ -37,6 +38,26 @@ def _read_dashboard_filters():
     if errors:
         filters = {"status": "All", "priority": "All"}
     return filters, errors
+
+
+def _read_task_form(*, editing, filter_errors):
+    fields, errors = _read_single_values(request.form, TASK_FIELDS)
+    form_values = {name: fields.get(name, "") for name in TASK_FIELDS}
+    for name in errors:
+        form_values[name] = request.form.getlist(name)
+
+    if filter_errors or errors:
+        # Check the remaining fields for feedback without attempting a write.
+        try:
+            validate_task_fields(fields, editing=editing)
+        except ValidationError as error:
+            errors = error.errors | errors
+    return fields, form_values, errors
+
+
+def _redirect_to_dashboard(filters):
+    active_filters = {name: value for name, value in filters.items() if value != "All"}
+    return redirect(url_for("dashboard", **active_filters), code=303)
 
 
 def _render_dashboard(filters, form_values, errors, *, filter_errors=None):
@@ -112,18 +133,8 @@ def create_app(config_class=DevelopmentConfig):
     @app.post("/tasks")
     def create_task():
         filters, filter_errors = _read_dashboard_filters()
-        fields, errors = _read_single_values(request.form, TASK_FIELDS)
-        form_values = {name: fields.get(name, "") for name in TASK_FIELDS}
-        for name in errors:
-            form_values[name] = request.form.getlist(name)
-
-        if filter_errors or errors:
-            # Check the remaining fields for feedback without attempting a write.
-            try:
-                validate_task_fields(fields, editing=False)
-            except ValidationError as error:
-                errors = error.errors | errors
-        else:
+        fields, form_values, errors = _read_task_form(editing=False, filter_errors=filter_errors)
+        if not filter_errors and not errors:
             db = get_db()
             try:
                 task_service.create_task(db, fields)
@@ -131,10 +142,111 @@ def create_app(config_class=DevelopmentConfig):
                 errors = error.errors
             else:
                 flash("Task added.", "success")
-                active_filters = {name: value for name, value in filters.items() if value != "All"}
-                return redirect(url_for("dashboard", **active_filters), code=303)
+                return _redirect_to_dashboard(filters)
 
         return _render_dashboard(filters, form_values, errors, filter_errors=filter_errors), 400
+
+    @app.route("/tasks/<int:task_id>/edit", methods=["GET", "POST"])
+    def edit_task(task_id):
+        if not 1 <= task_id <= MAX_TASK_ID:
+            abort(404)
+
+        filters, filter_errors = _read_dashboard_filters()
+        db = get_db()
+        form_values = None
+        errors = {}
+        if request.method == "POST":
+            fields, form_values, errors = _read_task_form(editing=True, filter_errors=filter_errors)
+            if not filter_errors and not errors:
+                try:
+                    result = task_service.update_task(db, task_id, fields)
+                except TaskNotFound:
+                    abort(404)
+                except ValidationError as error:
+                    errors = error.errors
+                else:
+                    if result.changed:
+                        flash("Task updated.", "success")
+                    else:
+                        flash("No changes to save.", "info")
+                    return _redirect_to_dashboard(filters)
+
+        try:
+            task = task_service.get_task(db, task_id)
+        except TaskNotFound:
+            abort(404)
+
+        if form_values is None:
+            form_values = {
+                "title": task.title,
+                "description": task.description or "",
+                "priority": task.priority,
+                "due_date": task.due_date.isoformat() if task.due_date else "",
+            }
+        status = 400 if errors or filter_errors else 200
+        return render_template(
+            "task_form.html",
+            task=task,
+            filters=filters,
+            form_values=form_values,
+            errors=errors,
+            filter_errors=filter_errors,
+        ), status
+
+    @app.post("/tasks/<int:task_id>/complete")
+    def complete_task(task_id):
+        if not 1 <= task_id <= MAX_TASK_ID:
+            abort(404)
+
+        filters, filter_errors = _read_dashboard_filters()
+        if filter_errors:
+            form_values = {"title": "", "description": "", "due_date": "", "priority": "Medium"}
+            return _render_dashboard(filters, form_values, filter_errors), 400
+
+        today = local_today(current_app.config["TIMEZONE"])
+        db = get_db()
+        try:
+            result = task_service.complete_task(db, task_id, today)
+        except TaskNotFound:
+            abort(404)
+
+        if result.changed:
+            flash("Task completed.", "success")
+        else:
+            flash("Task is already completed.", "info")
+        return _redirect_to_dashboard(filters)
+
+    @app.post("/tasks/<int:task_id>/delete")
+    def delete_task(task_id):
+        if not 1 <= task_id <= MAX_TASK_ID:
+            abort(404)
+
+        filters, filter_errors = _read_dashboard_filters()
+        if filter_errors:
+            form_values = {"title": "", "description": "", "due_date": "", "priority": "Medium"}
+            return _render_dashboard(filters, form_values, filter_errors), 400
+
+        db = get_db()
+        try:
+            task_service.delete_task(db, task_id)
+        except TaskNotFound:
+            abort(404)
+
+        flash("Task deleted.", "success")
+        return _redirect_to_dashboard(filters)
+
+    @app.get("/summaries")
+    def summaries():
+        filters, filter_errors = _read_dashboard_filters()
+        if filter_errors:
+            form_values = {"title": "", "description": "", "due_date": "", "priority": "Medium"}
+            return _render_dashboard(filters, form_values, filter_errors), 400
+
+        today = local_today(current_app.config["TIMEZONE"])
+        reports = task_service.get_summaries(get_db(), today)
+        return render_template(
+            "summaries.html", daily=reports["daily"], weekly=reports["weekly"], filters=filters
+        )
 
     @app.get("/health")
     def health():
