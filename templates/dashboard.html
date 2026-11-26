@@ -1,14 +1,75 @@
-<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>DayPlan | Daily Task and Reminder Manager</title>
-  </head>
-  <body>
-    <main>
-      <h1>DayPlan</h1>
-      <p>Plan your day. Own your time.</p>
-    </main>
-  </body>
-</html>
+{% extends "base.html" %}
+
+{% block title %}DayPlan | Dashboard{% endblock %}
+
+{% macro task_card(row, show_due_today=false) %}
+  {% set task = row.task %}
+  <article class="task-card priority-{{ task.priority|lower }}{% if task.status == 'Completed' %} is-done{% endif %}">
+    <div class="task-main">
+      <div class="task-badges">
+        <span class="badge badge-{{ task.priority|lower }}">{{ task.priority }}</span>
+        <span class="badge badge-status">{{ task.status }}</span>
+        {% if row.is_overdue %}<span class="badge badge-overdue">Overdue</span>{% endif %}
+        {% if show_due_today and row.is_due_today %}<span class="badge badge-status">Due today</span>{% endif %}
+      </div>
+      <h3 class="task-title">{{ task.title }}</h3>
+      {% if task.description %}<p class="task-desc">{{ task.description }}</p>{% endif %}
+      <p class="task-meta">
+        {% if task.due_date %}<span>Due <time datetime="{{ task.due_date }}">{{ task.due_date }}</time></span>{% else %}<span>No due date</span>{% endif %}
+        {% if task.completed_on %}<span>Completed <time datetime="{{ task.completed_on }}">{{ task.completed_on }}</time></span>{% endif %}
+      </p>
+    </div>
+  </article>
+{% endmacro %}
+
+{% block content %}
+<section class="page-intro">
+  <h2>Your day</h2>
+  <p>Tasks, deadlines and follow-ups in one calm place.</p>
+</section>
+
+<form class="filters" method="get" action="{{ url_for('dashboard') }}">
+  <label>Status
+    <select name="status"{% if errors.status %} aria-invalid="true" aria-describedby="status-error"{% endif %}>
+      {% for option in ('All', 'Pending', 'Completed', 'Overdue') %}
+      <option value="{{ option }}"{% if filters.status == option %} selected{% endif %}>{{ option }}</option>
+      {% endfor %}
+    </select>
+    {% if errors.status %}<span class="field-error" id="status-error">{{ errors.status }}</span>{% endif %}
+  </label>
+  <label>Priority
+    <select name="priority"{% if errors.priority %} aria-invalid="true" aria-describedby="priority-error"{% endif %}>
+      {% for option in ('All', 'High', 'Medium', 'Low') %}
+      <option value="{{ option }}"{% if filters.priority == option %} selected{% endif %}>{{ option }}</option>
+      {% endfor %}
+    </select>
+    {% if errors.priority %}<span class="field-error" id="priority-error">{{ errors.priority }}</span>{% endif %}
+  </label>
+  <button class="btn btn-ghost" type="submit">Apply</button>
+  <a class="filter-reset" href="{{ url_for('dashboard') }}">Reset</a>
+</form>
+
+{% if not errors %}
+<section aria-labelledby="due-today-heading">
+  <h2 id="due-today-heading">Pending due today</h2>
+  <div class="task-list">
+    {% for row in due_today_tasks %}
+    {{ task_card(row) }}
+    {% else %}
+    <p class="empty-state">No pending tasks due today match these filters.</p>
+    {% endfor %}
+  </div>
+</section>
+
+<section aria-labelledby="tasks-heading">
+  <h2 id="tasks-heading">All matching tasks</h2>
+  <div class="task-list">
+    {% for row in tasks %}
+    {{ task_card(row, show_due_today=true) }}
+    {% else %}
+    <p class="empty-state">No tasks match these filters.</p>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+{% endblock %}
