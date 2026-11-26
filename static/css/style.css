@@ -196,3 +196,62 @@ h1, h2, h3 {
 .task-actions { display: flex; gap: 0.5rem; align-items: flex-start; flex-wrap: wrap; }
 
 .empty-state { padding: 2rem; text-align: center; color: rgba(37,37,34,0.6); border: 1px dashed var(--line); border-radius: var(--radius); }
+
+
+/* Task form */
+.form-card {
+  max-width: 680px;
+  margin-top: 2rem;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 1.75rem;
+  display: grid;
+  gap: 1.25rem;
+}
+
+.field { display: flex; flex-direction: column; gap: 0.35rem; }
+.field label { font-size: 0.85rem; font-weight: 600; }
+.required { color: var(--burgundy); }
+.hint { font-size: 0.78rem; color: rgba(37,37,34,0.55); }
+
+.field input,
+.field select,
+.field textarea {
+  padding: 0.65rem 0.85rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--cream);
+  color: var(--charcoal);
+  font: inherit;
+  width: 100%;
+}
+
+.field textarea { resize: vertical; }
+
+.field input:focus,
+.field select:focus,
+.field textarea:focus {
+  outline: 2px solid var(--sage);
+  outline-offset: 1px;
+  border-color: var(--sage);
+}
+
+.field-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1.25rem; }
+
+.field.has-error input,
+.field.has-error select,
+.field.has-error textarea { border-color: var(--burgundy); }
+
+.field-error { margin: 0; font-size: 0.82rem; font-weight: 600; color: var(--burgundy); }
+
+.form-alert {
+  padding: 0.85rem 1rem;
+  border-left: 4px solid var(--burgundy);
+  background: rgba(112, 45, 60, 0.08);
+  border-radius: var(--radius);
+  color: var(--burgundy);
+  font-size: 0.9rem;
+}
+
+.form-actions { display: flex; gap: 0.75rem; flex-wrap: wrap; padding-top: 0.5rem; }
