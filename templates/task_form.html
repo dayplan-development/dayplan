@@ -1,87 +1,32 @@
-{% extends "base.html" %}
+{% extends "dashboard.html" %}
+{# Override the dashboard content while reusing its task_fields macro. #}
 
-{% set f = form if form is defined else {} %}
-{% set e = errors if errors is defined else {} %}
-{% set is_edit = (mode == 'edit') if mode is defined else False %}
-
-{% block title %}DayPlan | {{ 'Edit task' if is_edit else 'New task' }}{% endblock %}
+{% block title %}DayPlan | Edit task{% endblock %}
 
 {% block content %}
-<section class="page-intro">
-  <h2>{{ 'Edit task' if is_edit else 'New task' }}</h2>
-  <p>{{ 'Update the details below.' if is_edit else 'Add something you need to get done.' }}</p>
-</section>
+{% set status = filters.status if filters.status != 'All' else none %}
+{% set priority = filters.priority if filters.priority != 'All' else none %}
 
-<form class="form-card" method="post" action="{{ form_action if form_action is defined else '' }}" novalidate>
+<div class="edit-task-page">
+  <header class="edit-task-intro">
+    <h2 id="edit-task-heading">Edit task</h2>
+  </header>
 
-  {% if e %}
+  {% if filter_errors %}
   <div class="form-alert" role="alert">
-    Please fix the highlighted fields and try again.
-    {% if e.general %}<br>{{ e.general }}{% endif %}
+    {% if filter_errors.status %}<p><strong>Status filter:</strong> {{ filter_errors.status }}</p>{% endif %}
+    {% if filter_errors.priority %}<p><strong>Priority filter:</strong> {{ filter_errors.priority }}</p>{% endif %}
   </div>
   {% endif %}
 
-  <div class="field {% if e.title %}has-error{% endif %}">
-    <label for="title">Title <span class="required">*</span></label>
-    <input id="title" name="title" type="text" maxlength="100"
-           value="{{ f.title or '' }}" placeholder="What needs doing?">
-    <span class="hint">1 to 100 characters</span>
-    {% if e.title %}<p class="field-error">{{ e.title }}</p>{% endif %}
-  </div>
+  <form class="form-card" method="post" aria-labelledby="edit-task-heading"
+        action="{{ url_for('edit_task', task_id=task.id, status=status, priority=priority) }}">
+    {{ task_fields('edit', form_values, errors, show_limits=true) }}
 
-  <div class="field {% if e.description %}has-error{% endif %}">
-    <label for="description">Description</label>
-    <textarea id="description" name="description" rows="4" maxlength="500"
-              placeholder="Optional details">{{ f.description or '' }}</textarea>
-    <span class="hint">Optional, up to 500 characters</span>
-    {% if e.description %}<p class="field-error">{{ e.description }}</p>{% endif %}
-  </div>
-
-  <div class="field-row">
-    <div class="field {% if e.priority %}has-error{% endif %}">
-      <label for="priority">Priority</label>
-      {% set current_priority = f.priority or 'medium' %}
-      <select id="priority" name="priority">
-        <option value="low" {% if current_priority == 'low' %}selected{% endif %}>Low</option>
-        <option value="medium" {% if current_priority == 'medium' %}selected{% endif %}>Medium</option>
-        <option value="high" {% if current_priority == 'high' %}selected{% endif %}>High</option>
-      </select>
-      {% if e.priority %}<p class="field-error">{{ e.priority }}</p>{% endif %}
+    <div class="form-actions">
+      <button class="btn btn-primary" type="submit">Save changes</button>
+      <a class="btn btn-ghost" href="{{ url_for('dashboard', status=status, priority=priority) }}">Cancel</a>
     </div>
-
-    <div class="field {% if e.due_date %}has-error{% endif %}">
-      <label for="due_date">Due date</label>
-      <input id="due_date" name="due_date" type="date" value="{{ f.due_date or '' }}">
-      <span class="hint">Optional</span>
-      {% if e.due_date %}<p class="field-error">{{ e.due_date }}</p>{% endif %}
-    </div>
-  </div>
-
-  <div class="field-row">
-    <div class="field {% if e.reminder_at %}has-error{% endif %}">
-      <label for="reminder_at">Reminder</label>
-      <input id="reminder_at" name="reminder_at" type="datetime-local" value="{{ f.reminder_at or '' }}">
-      <span class="hint">Optional</span>
-      {% if e.reminder_at %}<p class="field-error">{{ e.reminder_at }}</p>{% endif %}
-    </div>
-
-    {% if is_edit %}
-    <div class="field {% if e.status %}has-error{% endif %}">
-      <label for="status">Status</label>
-      {% set current_status = f.status or 'pending' %}
-      <select id="status" name="status">
-        <option value="pending" {% if current_status == 'pending' %}selected{% endif %}>Pending</option>
-        <option value="in_progress" {% if current_status == 'in_progress' %}selected{% endif %}>In progress</option>
-        <option value="completed" {% if current_status == 'completed' %}selected{% endif %}>Completed</option>
-      </select>
-      {% if e.status %}<p class="field-error">{{ e.status }}</p>{% endif %}
-    </div>
-    {% endif %}
-  </div>
-
-  <div class="form-actions">
-    <button class="btn btn-primary" type="submit">{{ 'Save changes' if is_edit else 'Add task' }}</button>
-    <a class="btn btn-ghost" href="/">Cancel</a>
-  </div>
-</form>
+  </form>
+</div>
 {% endblock %}

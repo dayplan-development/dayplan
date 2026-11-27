@@ -1,14 +1,14 @@
 # DayPlan architecture
 
-Daily Task and Reminder Manager · Phase 2
+Daily Task and Reminder Manager · Approved Phase 2 baseline, implementation updated for Phase 3.2H
 
-The behavior this architecture supports is defined in the [project specification](PROJECT_SPECIFICATION.md). The approved product rules are the baseline. The new routes and backend components are implementation plans.
+The [project specification](PROJECT_SPECIFICATION.md) defines the approved product behavior. This document describes the architecture in the current checkout.
 
 | Status | Decisions |
 |---|---|
-| Existing | `app.py` exposes the app from the single factory in `dayplan/__init__.py`. The factory loads `config.py`, serves the top-level templates and static files, and registers the placeholder dashboard, health endpoint, and 404/500 handlers. Flask test-client coverage exists for these entry points. |
+| Implemented | The Flask factory registers the dashboard, task actions, summaries, health, error handlers, and the database CLI. SQLite persistence, server-side validation, date rules, analytics, Jinja views, and pytest coverage are in place. |
 | Confirmed direction | Use Python 3.13, Flask, Jinja2, HTML/CSS, SQLite, pytest, and GitHub Actions. Preserve one app factory and the top-level `templates/` and `static/` directories. Keep task rules and authoritative date and summary calculations on the server. |
-| Planned | Task routes, database access, validation, date and reporting logic, and their tests. The backend modules are scaffolds. CI is planned, and Render is optional. |
+| Release verification | The GitHub Actions workflow is present. Live PR checks and branch protection still need verification. The baseline is a local demo, with Render as an optional hosting path. |
 
 ## 1. System architecture
 
@@ -42,48 +42,47 @@ flowchart TD
 
 1. Flask or the deployment server imports `app.py`. It calls `create_app()` and exposes the returned application. Tests call the same factory with `TestingConfig`.
 2. The factory builds the app, sets absolute paths to the existing top-level `templates/` and `static/`, loads the configuration, and registers routes and error handlers.
-3. Add a `DATABASE_PATH` setting for the SQLite file, the `Asia/Kolkata` project timezone, the Flask `init-db` command, and app-context teardown. Resolve dates with `ZoneInfo` using the required `tzdata` dependency for portability. Register connection cleanup at setup and open a connection only when needed.
-4. Development uses a database under the ignored `instance/` directory. Tests override the path with a fresh temporary database. If deployed, the host supplies a writable persistent database path and runs with debug mode off. Load Flask's `SECRET_KEY` from the environment in development, tests, and deployment before enabling task routes with flash messages. Tests set a separate test-only environment value before creating the app. A missing key must be reported before accepting a write through those routes.
-5. Run `flask --app app init-db` before serving task routes against a new database. The command creates the directory and schema as needed and preserves rows on repeated runs. Normal requests require an initialized schema and surface a missing schema as a setup error. The Team Lead registers the command and teardown hook. Backend supplies schema initialization and connection helpers.
+3. `config.py` defines `TIMEZONE` as `Asia/Kolkata`. The date service resolves the local date with `ZoneInfo` and the required `tzdata` dependency. The factory resolves `DATABASE_PATH` from an explicit config value, the environment, or the default `instance/dayplan.sqlite3`, in that order. An explicitly blank path is rejected. Tests set up isolated temporary database files.
+4. The factory resolves `SECRET_KEY` from an explicit config value or the environment and rejects a missing or blank key at startup. Local development and optional deployment use separately configured environment secrets. Tests supply a test-only value. A deployed instance requires a writable persistent database path and debug mode off.
+5. Run `flask --app app init-db` before serving task or summary pages against a new database. The registered command calls `initialize_database` with the configured path. It creates the directory and schema as needed and preserves rows on repeated runs. Task and summary requests expect an initialized schema. Failures reach the generic HTTP 500 handler. The Team Lead owns CLI and teardown registration, and Backend owns the schema and connection helpers.
 
 ## 3. Module responsibilities and dependencies
 
-The table distinguishes the existing entry points from the proposed roles of the empty backend modules.
+The table describes the modules used by the current application and test suite.
 
 | Module | Responsibility | Dependencies within DayPlan |
 |---|---|---|
-| `app.py` | Existing entry point. Expose the configured Flask app. | `dayplan.create_app` |
-| `config.py` | Existing development and testing classes. Proposed home for database path and timezone settings. | None |
-| `dayplan/__init__.py` | Existing factory and HTTP entry points. Register routes, handlers, and proposed database lifecycle hooks. | `config`, `task_service`, `date_service`, and `database` for connection setup and teardown |
+| `app.py` | Expose the configured Flask application as `app`. | `dayplan.create_app` |
+| `config.py` | Define development and testing config classes, the project timezone, and environment-backed secret and database path resolution. | None |
+| `dayplan/__init__.py` | Build the app, validate HTTP input, wire services and templates, register error handlers and `init-db`, and manage the connection lifecycle. | `config`, `task_service`, `validators`, `date_service`, `database` |
 | `dayplan/task_service.py` | Validate input through the validator, coordinate create/read/update/delete and completion, enforce transitions, and supply task lists and summary results. | `models`, `validators`, `date_service`, `database`, `analytics` |
-| `dayplan/validators.py` | Normalize plain task and filter values and report field-specific errors. Return typed values such as dates and priorities. | `models` for shared status and priority definitions |
-| `dayplan/models.py` | Define the plain Python task record and shared status and priority values. | None |
+| `dayplan/validators.py` | Normalize plain task and filter values, report field-specific errors, and define `ValidationError` and `TaskNotFound`. Return typed values such as dates and priorities. | `models` for shared priority values |
+| `dayplan/models.py` | Define `Task`, `TaskView`, `DashboardTasks`, `MutationResult`, and shared status and priority values. | None |
 | `dayplan/database.py` | Own the schema, connection and transaction helpers, parameterized SQL, and mapping result rows to task records. | `models` |
 | `dayplan/date_service.py` | Resolve the current local date from the configured timezone and calculate due-today, overdue, and week boundaries. | `models` for task fields and status where needed |
 | `dayplan/analytics.py` | Calculate report counts and completion rates from task records and an explicit local date. | `models`, `date_service` |
-| `tests/conftest.py` | Proposed home for shared fixtures such as the test app, client, and temporary database. | App factory, test configuration, database initialization |
-| `tests/test_routes.py` | Existing Flask test-client tests. Expand coverage as routes are introduced. | App factory and test fixtures |
-| `tests/test_tasks.py` | Proposed tests for task operations and state changes. Add focused test modules when useful for validation, date rules, and analytics. | Backend modules and test fixtures |
+| `tests/test_routes.py` | Test Flask configuration, connection lifecycle, CLI, routes, and real template rendering. App, client, and route database fixtures live here. | App factory, test configuration, backend modules |
+| `tests/test_tasks.py` | Test task operations, SQLite persistence and rollback, validation, date rules, and analytics using module-local fixtures. | Backend modules |
 
 The entry point depends on the factory, the HTTP layer depends on the service, and the service depends on the modules that supply data and rules. Backend functions accept plain Python values and an explicit connection where they need one, so they can run without a Flask app or request context. They never import the factory, read form data, render templates, or choose an HTTP status. Analytics receives task records and never queries SQLite directly. Templates receive the values they need to display and do no business calculations.
 
 ## 4. Routes and communication
 
-| Method and path | Responsibility | Status |
+| Method and path | Responsibility | Flask endpoint |
 |---|---|---|
-| `GET /` | Read filter query parameters, ask the service for matching tasks, and render the dashboard. | Existing placeholder, task integration planned |
-| `GET /health` | Return the existing JSON liveness response. | Existing |
-| `GET /static/<path:filename>` | Serve CSS and other assets from the top-level static directory. | Existing |
-| `POST /tasks` | Read form fields, call create, and redirect to the dashboard after success. | Planned |
-| `GET /tasks/<int:task_id>/edit` | Load the task and display its edit form. | Planned |
-| `POST /tasks/<int:task_id>/edit` | Submit edited fields to the service and redirect after success. | Planned |
-| `POST /tasks/<int:task_id>/complete` | Ask the service to mark the task completed. | Planned |
-| `POST /tasks/<int:task_id>/delete` | Ask the service to remove the task after confirmation. | Planned |
-| `GET /summaries` | Ask the service for daily and weekly results and render them together. | Planned |
+| `GET /` | Validate query filters and render the task list and create form. | `dashboard` |
+| `GET /health` | Return the JSON liveness response. | `health` |
+| `GET /static/<path:filename>` | Serve assets from the top-level static directory. | `static` |
+| `POST /tasks` | Pass submitted task fields to the service for validation and creation, then redirect after commit. | `create_task` |
+| `GET /tasks/<int:task_id>/edit` | Load the task and display its edit form. | `edit_task` |
+| `POST /tasks/<int:task_id>/edit` | Submit changes to the service and redirect after a committed change or no-op. | `edit_task` |
+| `POST /tasks/<int:task_id>/complete` | Ask the service to complete the task or report that it was already completed. | `complete_task` |
+| `POST /tasks/<int:task_id>/delete` | Ask the service to delete the task after the browser confirms. | `delete_task` |
+| `GET /summaries` | Render the daily and weekly reports from all retained tasks. | `summaries` |
 
 Forms submit title, description, due date, and priority in the POST body. The server assigns the ID, status, and completion date. Status and priority navigation filters come only from the URL query. Apply both together and preserve them across task actions and 303 redirects. A validation failure returns 400 and re-renders the relevant form with its entered values and field messages. Identical edits leave the record and `updated_at` unchanged.
 
-The route reads HTTP inputs, obtains the request's database connection when needed, and passes inputs and the same local date to the task service. It receives task records, display-ready indicators or summary values, or a known error. The route chooses the template, redirect, or response status. Jinja escapes user-entered text and displays the server-calculated values. A little browser scripting may help with interaction, such as deletion confirmation.
+The route reads HTTP inputs, obtains the request's database connection when needed, and passes the project-local date to operations that use it. The route chooses the template, redirect, or response status. Jinja escapes user-entered text and displays server-calculated values. `base.html` provides layout, CSS and flash messages. `dashboard.html` renders the task lists and create form, `task_form.html` reuses its field macro for editing, and `summaries.html` extends the shared base with both reports. Deletion confirmation uses the browser's native dialog before form submission.
 
 ### Create a task
 
@@ -108,7 +107,7 @@ sequenceDiagram
             S-->>F: Task created
             F-->>B: HTTP 303 to dashboard with active filters
             B->>F: GET /
-            F-->>B: Dashboard HTML including saved task
+            F-->>B: Dashboard HTML with task if it matches filters
         else Storage fails
             D-->>S: Roll back and report failure
             S-->>F: Unexpected storage error
@@ -128,6 +127,7 @@ sequenceDiagram
     participant D as Database module and SQLite
     participant A as Analytics
     B->>F: GET /summaries
+    Note over F: Validate query filters before opening SQLite
     F->>T: Resolve today's date in the project timezone
     T-->>F: One local date for this request
     F->>S: Get both summaries using this date and connection
@@ -146,7 +146,7 @@ sequenceDiagram
 - Open at most one connection per Flask application context as needed, typically for one request. Store it in Flask's context-local `g` through the integration, and close it in the registered teardown callback on success or failure. A CLI command gets its own context. Pure service and database tests can use an explicit test connection.
 - The task service decides which steps belong to one mutation. The database module provides the transaction boundary and owns SQL, commit, and rollback. Validate input before writing, make any state-dependent checks and their write within the same transaction, commit on success, and roll back on failure. Return success only after commit. Teardown closes the connection.
 - Use parameterized SQL and enforce basic data integrity in SQLite, including unique IDs and approved status and priority values. Use `YYYY-MM-DD` for stored calendar dates and convert rows to Python dates at the persistence boundary. Keep the schema and initialization logic together.
-- A summary request reads all saved tasks once and computes both reports from the same records. Navigation filters are only used for the back link. It uses a read-only operation without a write transaction. Start with Python aggregation over the small task list expected for this project.
+- A summary request reads all saved tasks once and computes both reports in Python from the same records. Navigation filters are used for the back link. The operation reads without starting a write transaction.
 
 ## 6. Error-handling flow
 
@@ -155,11 +155,11 @@ sequenceDiagram
 | Invalid task input or filter | Return structured field or filter errors. Leave saved values unchanged. | Re-render with feedback and preserve entered values. Use HTTP 400. |
 | Unknown task ID | Report that the task was not found. | Use the 404 handler. |
 | Unexpected database or application error | Roll back an open write transaction, then propagate the failure for server-side logging. | Use the generic 500 handler. Keep SQL, tracebacks, and private settings out of the user response. |
-| Successful change | Commit and return the saved result. | Redirect to a GET page. |
+| Successful change or no-op | Commit a change and return its result, or leave the row unchanged for a no-op. | Flash the outcome and return HTTP 303 with active filters. |
 
 ## 7. Dates and summaries
 
-The date service resolves the project-local date once per request. Pass that date explicitly into calculations so unit tests can supply a fixed day. A task is overdue only when it is Pending and its due date is before that day. Equality means due today. Completed and undated tasks never count as overdue. Persist Pending and Completed as task states and derive overdue and due-today indicators when reading tasks. The actionable due-today list includes only Pending tasks. The daily due total includes both statuses.
+Routes that need the project-local date resolve it once through the date service and pass it explicitly to the relevant calculation or completion operation. A task is overdue only when it is Pending and its due date is before that day. Equality means due today. Completed and undated tasks never count as overdue. SQLite stores Pending and Completed as task states, and the service derives overdue and due-today indicators when reading tasks. The actionable due-today list includes only Pending tasks. The daily due total includes both statuses.
 
 Analytics counts tasks due today by status, overdue tasks, and tasks completed today using the recorded local completion date. The latter measure can overlap with the due-today count. For the weekly summary, the date service returns the Monday–Sunday bounds and analytics counts the tasks due within those inclusive dates. The rate is **completed tasks due in the week ÷ all tasks due in the week × 100**. A week with no tasks due has no rate and the template displays “No tasks due,” even if undated or out-of-week tasks exist. A nonempty week with no completions shows 0.0%. The template may format the result for display.
 
@@ -171,7 +171,7 @@ Analytics counts tasks due today by status, overdue tasks, and tasks completed t
 | SQLite integration | A freshly initialized temporary database per test. Verify create, edit, complete, delete, editing Completed tasks, identical edits preserving `updated_at`, persistence after reopening the connection, and rollback on failure. |
 | Flask integration | Build the app with test configuration and use the Flask test client without a live server. Cover empty titles, invalid priorities and dates, preserved form values, URL and form priority separation, combined filters, 303 filter preservation, summary independence, flash messages, static files, and 404/500 responses. |
 
-The proposed GitHub Actions workflow in `.github/workflows/` installs pinned dependencies on Python 3.13 and runs `python -m pytest` on pushes and pull requests. Establish the workflow in a reviewed PR and verify the named pytest job runs before configuring it as required on protected `main`. Require reviewed PRs and a successful check before merging feature work. The team lead owns the workflow and route tests, the backend owner covers logic and persistence, and the frontend owner verifies the rendered behavior and keyboard use.
+The checked-in [GitHub Actions workflow](../.github/workflows/python-tests.yml) configures an Ubuntu job named `pytest`. It installs the pinned dependencies with Python 3.13 and runs `python -m pytest -q` for pushes to `main` and `feature/**`, and pull requests targeting `main`. Verify the named check on a PR before making it required on protected `main`. Review and successful checks are required by the team workflow. The Team Lead owns the workflow and route tests, Backend covers logic and persistence, and Frontend verifies rendering and keyboard use.
 
 ## 9. Deployment
 
@@ -182,5 +182,5 @@ Approve the host's persistent storage and demo access before deploying a mutable
 ## 10. Implementation handoffs
 
 - Verify timezone loading in Windows and CI after installing the pinned dependencies. Keep tests deterministic by passing a fixed local date or clock.
-- Use the [API contract](API_CONTRACT.md) as the handoff for endpoint names, form fields, service results, and error data. The team can confirm list order and deletion confirmation presentation during implementation.
+- Use the [API contract](API_CONTRACT.md) for endpoint names, form fields, service results, and error data. The dashboard currently lists tasks in ascending ID order, and the Delete form uses native browser confirmation.
 - For optional Render hosting, agree on access, form protection, runtime database initialization, and demo data before deployment.

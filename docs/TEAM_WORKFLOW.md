@@ -4,7 +4,7 @@ Daily Task and Reminder Manager · Phase 2 · Exercises 9 and 10
 
 This workflow is for exactly three contributors. It follows the [project specification](PROJECT_SPECIFICATION.md), [architecture](ARCHITECTURE.md), [database schema](DATABASE_SCHEMA.md), and [frontend and service contract](API_CONTRACT.md). Responsibilities, existing branch names, and the Phase 2 product baseline are agreed. The workflow below defines the handoffs and checks to establish.
 
-The local repository metadata shows `main` and `feature/app-integration` as local branches and records all four agreed branches under `origin`. The current checkout contains only `.gitkeep` in `.github/workflows/`. Live branch protection and Actions settings were not verified.
+The local branch list and remote-tracking refs include all four agreed branches. The checkout includes [`.github/workflows/python-tests.yml`](../.github/workflows/python-tests.yml). This documents the intended review, merge, and release process. GitHub approvals, merges, Actions results, and live protection settings remain unverified here.
 
 ## 1. Responsibilities and file ownership
 
@@ -31,8 +31,10 @@ When a change touches another member's files, agree who will edit each file befo
 
 ## 2. Dependencies and implementation order
 
+The baseline task and summary flows are present in this checkout. The sequence below records the integration dependencies and review process for changes to those flows.
+
 1. **Use the approved baseline.** All three members review the specification and contract before starting. Use the agreed task fields, date rules, service signatures, routes, forms, context, and error format. Confirm implementation details such as list order and the confirmation UI during the handoff.
-2. **Set up the review and CI baseline.** The Team Lead opens a reviewed Actions setup PR for Python 3.13 and pytest, verifies the named check runs on a PR, and then makes it required on protected `main`. Verify live review and merge settings before merging feature work.
+2. **Verify the review and CI baseline.** The Team Lead confirms the repository workflow has been reviewed and that its named Python 3.13 pytest check runs on a PR. Make the check required on protected `main` after verifying it. Verify live review and merge settings before merging feature work.
 3. **Develop backend and frontend in parallel.** Backend implements schema initialization, the task record, CRUD, validation, and date rules with pytest. The Team Lead verifies the pinned `tzdata` installation and supplies `SECRET_KEY` through the environment for development and isolated test runs. Frontend builds templates and forms from the agreed context and can use example values locally to check their presentation. Those examples stay out of production routes.
 4. **Integrate one complete task flow.** Once the Backend PR exposes the agreed persistence and service functions and the Frontend PR exposes a usable form, the Team Lead wires creation and dashboard listing. Confirm a valid task persists, a rejected task shows its field errors, and the page appears correctly after redirect. Merge compatible groundwork before the integration PR. If neither side can pass checks alone, coordinate one integration PR.
 5. **Complete the remaining task and report flows.** Add editing, completion, deletion, and filters, then connect due-date handling and both summaries. Backend supplies tested rules and counts. Frontend supplies the views. The Team Lead integrates and tests them with Flask's test client.
@@ -84,8 +86,8 @@ If a merge stops with conflicts, pause before pushing. The feature branch owner 
 
 ## 6. GitHub Actions and protected main
 
-- The Team Lead coordinates one baseline workflow under `.github/workflows/` that runs on pushes and pull requests. The job uses Python 3.13, installs `requirements.txt` including `tzdata`, and runs `python -m pytest` against isolated test data with a test-only `SECRET_KEY` supplied through the environment. Give it a stable check name, such as `pytest`. [GitHub's Python workflow guide](https://docs.github.com/en/actions/tutorials/build-and-test-code/python)
-- Establish CI and verify the named check runs on a PR before making that check required on protected `main`. Configure required PRs, at least one independent approval, successful required checks, and an up-to-date branch before merging. Require resolution of review conversations and apply the no-bypass policy to the team, including the Team Lead. If the settings are unavailable, raise that with the repository administrator before reporting assignment compliance. [GitHub branch protection settings](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches)
+- The checked-in **Python tests** workflow configures an Ubuntu job named `pytest` for pushes to `main` and `feature/**`, and pull requests targeting `main`. It sets up Python 3.13, installs `requirements.txt` including `tzdata`, and runs `python -m pytest -q` with a test-only `SECRET_KEY`. The test suite uses isolated task databases. [Workflow file](../.github/workflows/python-tests.yml)
+- Verify that the named check runs on a PR before making it required on protected `main`. Configure required PRs, at least one independent approval, successful required checks, and an up-to-date branch before merging. Require resolution of review conversations and apply the no-bypass policy to the team, including the Team Lead. If the settings are unavailable, raise that with the repository administrator before reporting assignment compliance. [GitHub branch protection settings](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches)
 - Ban direct pushes, branch deletion, and force pushes on `main`. Keep automatic deletion of merged head branches disabled for this repository so the assigned branches survive. [GitHub branch deletion settings](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/configuring-pull-request-merges/managing-the-automatic-deletion-of-branches)
 - Before merging, check the latest PR revision. A failed, pending, or missing required check needs investigation. After any fix or merge from `main`, wait for the new check result and get fresh review where needed. Use explicit manual UI checks for work such as keyboard navigation or responsive layout.
 
@@ -103,7 +105,7 @@ The Team Lead coordinates the baseline local demo from the reviewed `main` revis
 - [ ] Find the four existing branches on GitHub and track the assigned branch locally.
 - [ ] Read the planning documents and use the approved product baseline and integration contract.
 - [ ] Set up Python 3.13, a local `.venv/`, and the pinned dependencies from the README.
-- [ ] Run Flask and pytest locally. Use a temporary database for tests once database support is available.
+- [ ] Configure the local development secret, run `flask --app app init-db`, start Flask, and run pytest. The test fixtures initialize separate temporary databases.
 - [ ] Confirm file ownership, an isolated database fixture and test-only environment secret, handoff order, and reviewer assignments.
 - [ ] Verify the actual GitHub Actions run, required status check, PR protection, and branch retention settings.
 - [ ] Agree where to record PRs, reviews, screenshots, demo instructions, and prompt verification evidence.
@@ -113,7 +115,7 @@ The Team Lead coordinates the baseline local demo from the reviewed `main` revis
 | Potential overlap or dependency | Agreement needed |
 |---|---|
 | Database startup and test setup | Backend owns schema initialization and transactions. The Team Lead supplies configuration and registers lifecycle hooks. Coordinate the isolated test fixtures. |
-| Form fields, routes, and Jinja context | All three use the documented names, allowed values, and error format. Frontend and Team Lead coordinate updates to dashboard tests when replacing the placeholder. |
+| Form fields, routes, and Jinja context | All three use the documented names, allowed values, and error format. Frontend and Team Lead coordinate template changes with route tests that render the real pages. |
 | Date, completion, and report rules | Backend applies the approved Asia/Kolkata and Monday–Sunday rules. Frontend displays the server-provided results, and the Team Lead tests that dashboard filters leave both reports unchanged. |
 | Merge sequence | Agree which independent pieces can merge first and which changes require one coordinated PR. |
 | CI and deployment | The Team Lead confirms GitHub settings and any frontend workflow edits. The local demo is the baseline. The Team Lead verifies release checks and, if Render is chosen, storage and access. |
