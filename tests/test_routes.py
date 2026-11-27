@@ -311,6 +311,14 @@ def test_dashboard_renders_empty_lists_and_create_form_with_default_context(dash
         "tasks": [],
         "due_today_tasks": [],
         "today": date(2026, 11, 26),
+        "daily": {
+            "date": date(2026, 11, 26),
+            "due_total": 0,
+            "due_pending": 0,
+            "due_completed": 0,
+            "overdue": 0,
+            "completed_today": 0,
+        },
         "filters": {"status": "All", "priority": "All"},
         "form_values": {"title": "", "description": "", "due_date": "", "priority": "Medium"},
         "errors": {},
@@ -352,6 +360,46 @@ def test_dashboard_renders_full_task_text_and_actions_by_status(populated_dashbo
                 assert "/complete" not in card
             if task.id == long_task.id:
                 assert f'<p class="task-desc">{description}</p>' in card
+
+
+def test_dashboard_overview_counts_all_tasks_independently_of_filters(
+    populated_dashboard_app, monkeypatch
+):
+    app = populated_dashboard_app
+    with app.app_context():
+        db = get_db()
+        for title, due_date, completion_date in (
+            ("Past deadline, completed today", "2026-11-23", date(2026, 11, 26)),
+            ("Completed yesterday", "2026-11-25", date(2026, 11, 25)),
+        ):
+            task = task_service.create_task(db, {"title": title, "due_date": due_date})
+            task_service.complete_task(db, task.id, completion_date)
+    get_summaries = Mock(wraps=task_service.get_summaries)
+    monkeypatch.setattr(task_service, "get_summaries", get_summaries)
+
+    for filters in (None, {"status": "Pending", "priority": "Low"}):
+        response, context = get_dashboard(app, filters)
+
+        assert response.status_code == 200
+        assert context["daily"] == {
+            "date": date(2026, 11, 26),
+            "due_total": 3,
+            "due_pending": 2,
+            "due_completed": 1,
+            "overdue": 2,
+            "completed_today": 2,
+        }
+        html = response.get_data(as_text=True)
+        overview = html.split('<dl class="dashboard-overview"', 1)[1].split("</dl>", 1)[0]
+        assert re.findall(r"<dd>(\d+)</dd>", overview) == ["3", "2", "2"]
+        if filters:
+            assert {row.task.title for row in context["tasks"]} == {"Low due today", "Low overdue"}
+
+    assert dayplan.local_today.call_args_list == [call("Asia/Kolkata")] * 2
+    assert get_summaries.call_count == 2
+    assert [invocation.args[1] for invocation in get_summaries.call_args_list] == [
+        date(2026, 11, 26)
+    ] * 2
 
 
 def test_dashboard_applies_status_and_priority_together(populated_dashboard_app):
@@ -417,6 +465,8 @@ def test_dashboard_invalid_filters_do_not_open_database(
 ):
     opener = Mock(side_effect=AssertionError("Invalid filters must not open SQLite"))
     monkeypatch.setattr(database, "get_connection", opener)
+    get_summaries = Mock(side_effect=AssertionError("Invalid filters must not load summaries"))
+    monkeypatch.setattr(task_service, "get_summaries", get_summaries)
 
     response, context = get_dashboard(dashboard_app, query_string)
 
@@ -426,7 +476,10 @@ def test_dashboard_invalid_filters_do_not_open_database(
     assert context["tasks"] == []
     assert context["due_today_tasks"] == []
     assert context["errors"] == errors
+    assert context["daily"] is None
+    assert b'class="dashboard-overview"' not in response.data
     opener.assert_not_called()
+    get_summaries.assert_not_called()
     dayplan.local_today.assert_called_once_with("Asia/Kolkata")
 
 
@@ -464,6 +517,28 @@ def test_post_tasks_persists_approved_fields_and_redirects_with_filters(dashboar
     with client.session_transaction() as session:
         assert session["_flashes"] == [("success", "Task added.")]
     dayplan.local_today.assert_not_called()
+
+
+def test_post_tasks_renders_success_notification_once_after_redirect(dashboard_app):
+    client = dashboard_app.test_client()
+
+    response = client.post("/tasks", data={"title": "Draft"}, follow_redirects=True)
+
+    assert [redirect.status_code for redirect in response.history] == [303]
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    assert html.count("Task added.") == 1
+    assert html.count('data-flash-category="success"') == 1
+    assert "<strong>Success:</strong>" in html
+    assert 'role="status" aria-live="polite" aria-atomic="true"' in html
+    assert 'role="alert" aria-live="assertive" aria-atomic="true"' in html
+    assert 'type="button" aria-label="Dismiss notification" hidden' in html
+    assert 'src="/static/js/notifications.js" defer' in html
+
+    next_response = client.get("/")
+    assert next_response.status_code == 200
+    assert b"Task added." not in next_response.data
+    assert b"data-flash-stack" not in next_response.data
 
 
 @pytest.mark.parametrize(
@@ -534,6 +609,29 @@ def test_post_tasks_invalid_fields_preserve_values_and_filtered_dashboard(
     assert [row.task.title for row in context["due_today_tasks"]] == ["High due today"]
     assert saved_tasks(populated_dashboard_app) == before
     dayplan.local_today.assert_called_once_with("Asia/Kolkata")
+
+
+@pytest.mark.parametrize("operation", ["create", "edit"])
+@pytest.mark.parametrize("field", ["title", "description"])
+@pytest.mark.parametrize("value", ["\x00", "Normal text\x00"], ids=["nul-only", "trailing-nul"])
+def test_task_forms_reject_nul_without_changing_records(edit_app, operation, field, value):
+    before = saved_tasks(edit_app)
+    if operation == "create":
+        path, template, prefix = "/tasks", "dashboard.html", "create"
+    else:
+        path, template, prefix = f"/tasks/{before[0].id}/edit", "task_form.html", "edit"
+    fields = {"title": "Revised title", "description": "Revised description", "priority": "High"}
+    fields[field] = value
+
+    response, context = request_template(edit_app, path, template, method="POST", data=fields)
+
+    assert response.status_code == 400
+    message = "Remove null characters from this field."
+    assert context["errors"] == {field: message}
+    html = response.get_data(as_text=True)
+    assert f'aria-describedby="{prefix}-{field}-error"' in html
+    assert f'id="{prefix}-{field}-error">{message}</p>' in html
+    assert saved_tasks(edit_app) == before
 
 
 @pytest.mark.parametrize("field", ["title", "description", "due_date", "priority"])
@@ -631,6 +729,10 @@ def test_post_tasks_failed_write_returns_generic_500_without_success_flash(dashb
     assert saved_tasks(dashboard_app) == []
     with client.session_transaction() as session:
         assert "_flashes" not in session
+    dashboard = client.get("/")
+    assert dashboard.status_code == 200
+    assert b"Task added." not in dashboard.data
+    assert b'data-flash-category="success"' not in dashboard.data
 
 
 def test_edit_task_get_prefills_context_and_preserves_filters(edit_app):
@@ -1162,13 +1264,34 @@ def test_summaries_renders_exact_reports_using_one_service_call(populated_dashbo
     html = response.get_data(as_text=True)
     assert 'href="#daily">Daily</a>' in html and 'href="#weekly">Weekly</a>' in html
     assert 'href="/">Back to dashboard</a>' in html
+    assert "<h2>Your progress</h2>" in html
     values_by_section = {
-        "daily": ["3", "2", "1", "2", "1"],
-        "weekly": ["6", "5", "1", "2", "16.7%"],
+        "daily": [
+            ("Total tasks due today", "3"),
+            ("Overdue tasks", "2"),
+            ("Tasks completed today", "1"),
+            ("Pending tasks due today", "2"),
+            ("Completed tasks due today", "1"),
+        ],
+        "weekly": [
+            ("Total tasks due this week", "6"),
+            ("Pending tasks due this week", "5"),
+            ("Completed tasks due this week", "1"),
+            ("Overdue tasks this week", "2"),
+        ],
     }
     for section, expected in values_by_section.items():
         content = html.split(f'<section id="{section}"', 1)[1].split("</section>", 1)[0]
-        assert re.findall(r'<span class="stat-value">([^<]+)</span>', content) == expected
+        actual = re.findall(
+            r'<dt class="stat-label">([^<]+)</dt>\s*<dd><span class="stat-value">([^<]+)</span>',
+            content,
+        )
+        assert actual == expected
+    assert '<span class="stat-value">16.7%</span>' in html
+    assert "1 of 6 tasks due this week completed" in html
+    rate = context["weekly"]["completion_rate"]
+    assert f'<meter class="completion-meter" min="0" max="100" value="{rate}"' in html
+    assert 'aria-labelledby="completion-heading"></meter>' in html
     for day in ("2026-11-26", "2026-11-23", "2026-11-29"):
         assert f'<time datetime="{day}">' in html
     dayplan.local_today.assert_called_once_with("Asia/Kolkata")
@@ -1211,6 +1334,11 @@ def test_summaries_distinguishes_empty_weeks_from_zero_completion(dashboard_app,
     assert f'<span class="{expected_class}">{display}</span>' in html
     other_display = "0.0%" if display == "No tasks due" else "No tasks due"
     assert other_display not in html
+    if display == "No tasks due":
+        assert '<meter class="completion-meter"' not in html
+    else:
+        assert '<meter class="completion-meter" min="0" max="100" value="0.0"' in html
+        assert "0 of 1 task due this week completed" in html
 
 
 @pytest.mark.parametrize(

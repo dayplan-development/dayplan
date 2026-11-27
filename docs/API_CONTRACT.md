@@ -47,9 +47,9 @@ Both active filters must match when listing tasks on the dashboard. Summary calc
 
 | Method and URL | Purpose and endpoint | Parameters and validation | Service call | Success and redirect | Errors |
 |---|---|---|---|---|---|
-| `GET /` | Open dashboard. `dashboard` | Filters optional. | `list_tasks` | 200 dashboard HTML with task list and create form. No redirect. | 400 invalid filters, 500 unexpected failure. |
-| `GET /?status=Pending` | Filter by status using `dashboard`. The URL illustrates one valid choice. | `status` supplies the filter. `priority` is optional. | `list_tasks` | 200 dashboard HTML with selection and matching tasks, including an empty state. No redirect. | 400 invalid filters, 500 unexpected failure. |
-| `GET /?priority=High` | Filter by priority using `dashboard`. The URL illustrates one valid choice. | `priority` supplies the filter. `status` is optional. | `list_tasks` | 200 dashboard HTML with selection and matching tasks, including an empty state. No redirect. | 400 invalid filters, 500 unexpected failure. |
+| `GET /` | Open dashboard. `dashboard` | Filters optional. | `list_tasks`, `get_summaries` | 200 dashboard HTML with a task list, daily overview, and create form. No redirect. | 400 invalid filters, 500 unexpected failure. |
+| `GET /?status=Pending` | Filter by status using `dashboard`. The URL illustrates one valid choice. | `status` supplies the filter. `priority` is optional. | Same as `GET /`. | 200 dashboard HTML with selection and matching tasks, including an empty state. No redirect. | 400 invalid filters, 500 unexpected failure. |
+| `GET /?priority=High` | Filter by priority using `dashboard`. The URL illustrates one valid choice. | `priority` supplies the filter. `status` is optional. | Same as `GET /`. | 200 dashboard HTML with selection and matching tasks, including an empty state. No redirect. | 400 invalid filters, 500 unexpected failure. |
 | `POST /tasks` | Create a task. `create_task` | Required title. Optional description, due date, priority, and filters. Apply create rules. | `create_task` | On commit, flash “Task added.” and return 303 to the dashboard with active filters. | 400 with the dashboard form and feedback for invalid fields or filters. 500 unexpected failure. |
 | `GET /tasks/<int:task_id>/edit` | Open the edit form. `edit_task` | Required ID. Filters optional. | `get_task` | 200 edit form HTML prefilled with saved values. No redirect. | 400 invalid filters, 404 invalid or missing ID, 500 unexpected failure. |
 | `POST /tasks/<int:task_id>/edit` | Save edits. `edit_task` | Required ID, title, and priority. Optional description, due date, and filters. Apply edit rules. | `update_task` | After a committed change, flash “Task updated.” For an identical edit, flash “No changes to save.” without updating the row. Return 303 to the dashboard with active filters. | 400 with the edit form and feedback for invalid fields or filters. 404 invalid or missing ID. 500 unexpected failure. |
@@ -114,13 +114,16 @@ The validator owns task-field and filter rules. The date service owns the overdu
 | `tasks` | Filtered task rows as `TaskView` objects. |
 | `due_today_tasks` | The server-selected Pending subset due today, using the same active filters. |
 | `today` | The request's project-local date. |
+| `daily` | The dashboard's daily summary uses the fields in the Daily and weekly summaries table below. Its overview displays `due_total`, `overdue`, and `completed_today`. Invalid filters set `daily` to `None` and hide the overview. |
 | `filters` | Validated `status` and `priority` selections, including All defaults. |
 | `form_values` | The initial dashboard uses empty fields with Medium priority. A rejected create or edit preserves raw submitted strings and uses a blank for absent fields. Repeated values are kept in the context as a list, and the form displays the first with the duplicate-field error. Edit GET uses the saved values with an ISO due date or a blank. |
 | `errors` | Task-field feedback on create and edit. Dashboard filter errors also use this mapping when no `filter_errors` key is supplied. Empty for a normal render. |
 | `filter_errors` | Separate URL filter feedback on rejected create requests and edit form renders. Keeps the URL and body `priority` errors distinct. |
 | `task` | Saved `Task` on the edit page, used to identify the form target. |
 
-The create form is part of `dashboard.html`. `task_form.html` uses `task`, `filters`, `form_values`, `errors`, and `filter_errors` and reuses the dashboard's field markup. Both forms use a text field for due dates so a malformed value can be shown after validation fails. If a rejected edit's task can no longer be loaded, Flask returns 404. The dashboard shows filter feedback and suppresses empty-list text for invalid queries.
+For valid filters, the dashboard calls `list_tasks(db, filters, today)` once for both task lists and takes `daily` from `get_summaries(db, today)`. The overview totals use all saved tasks regardless of the active filters. When rendering the dashboard for invalid filters, Flask skips database access and both service calls. It passes empty task lists and `daily=None`, so the page shows filter feedback without empty-list text or zero-valued overview totals.
+
+The create form is part of `dashboard.html`. `task_form.html` uses `task`, `filters`, `form_values`, `errors`, and `filter_errors` and reuses the dashboard's field markup. Both forms use a text field for due dates so a malformed value can be shown after validation fails. If a rejected edit's task can no longer be loaded, Flask returns 404.
 
 Use the `is_overdue` flag to display a visible **Overdue** label, with color as a secondary cue. Display **Due today** for the actionable due-today flag. Keep the stored Pending or Completed status visible separately. Render user-entered text with normal Jinja escaping.
 

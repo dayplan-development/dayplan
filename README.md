@@ -8,16 +8,44 @@ DayPlan is a Flask app for managing a single task list stored in SQLite. You can
 
 ## Development setup on Windows
 
-Use Git, Python 3.13, and PowerShell. Clone the repository, then create a virtual environment and install the pinned dependencies.
+Use Git, Python 3.13, and PowerShell.
+
+### Choose one clone command
+
+Run only the example that applies to you, then continue to the virtual environment setup.
+
+**Pre-release.** Clone `feature/app-integration` while the release is awaiting independent approval or merge.
+
+```powershell
+git clone --branch feature/app-integration https://github.com/dayplan-development/dayplan.git
+Set-Location dayplan
+```
+
+**After release.** Once [PR #3](https://github.com/dayplan-development/dayplan/pull/3) is independently approved and merged, new users should clone the default `main` branch.
 
 ```powershell
 git clone https://github.com/dayplan-development/dayplan.git
 Set-Location dayplan
-py -3.13 -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
 ```
 
-If `py -3.13` cannot find your installed interpreter, use `py -0p` to list registered interpreters and run the Python 3.13 executable directly with `-m venv .venv`. If `.venv` already uses another Python version, choose a new environment directory and use that path in the remaining commands.
+From the repository root, create the virtual environment.
+
+```powershell
+py -3.13 -m venv .venv
+```
+
+On some Windows installations, `py -3.13` may fail even when Python 3.13 is installed. Run `py -0p` to list registered interpreters, then replace the example path below with the full path to your Python 3.13 executable.
+
+```powershell
+py -0p
+& 'C:\path\to\python.exe' -m venv .venv
+```
+
+If `.venv` already uses another Python version, choose a new environment directory and use that path in the remaining commands. Install the pinned dependencies using the virtual environment's Python. Activation is optional.
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+```
 
 In the same PowerShell session, generate a nonblank development `SECRET_KEY`. Flask uses it to sign session cookies. Keep the key private and out of Git. If you open a new terminal, set the variable again before running Flask.
 
@@ -48,13 +76,17 @@ From the repository root, run pytest with the Python 3.13 virtual environment. T
 .\.venv\Scripts\python.exe -m pytest -q
 ```
 
+The [Python tests workflow](.github/workflows/python-tests.yml) uses Python 3.13 on Ubuntu and runs `python -m pytest -q` on pushes to `main` and `feature/**` and on pull requests targeting `main`.
+
 ## Project structure
 
 | Path | Purpose |
 |---|---|
 | `app.py`, `config.py` | Flask entry point and configuration. |
 | `dayplan/` | App factory, routes, task services, validation, SQLite access, date handling, and summary calculations. |
-| `templates/`, `static/` | Jinja templates and styles. |
+| `templates/` | Jinja templates for the dashboard, edit form, and summaries. |
+| `static/css/` | Application styles. |
+| `static/js/` | `notifications.js` handles flash notification dismissal. |
 | `tests/` | Backend and Flask route tests. |
 | `docs/` | Project requirements, architecture, database schema, API contract, and team workflow. |
 | `.github/workflows/` | GitHub Actions test workflow. |

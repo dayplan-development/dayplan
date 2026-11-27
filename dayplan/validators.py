@@ -54,6 +54,8 @@ def _text(value: object, key: str, maximum: int, required: bool) -> str | None:
         value = ""
     if not isinstance(value, str):
         raise ValidationError({key: "Enter a valid value."})
+    if "\x00" in value:
+        raise ValidationError({key: "Remove null characters from this field."})
     value = value.strip()
     if required and not value:
         raise ValidationError({key: "Enter a title."})

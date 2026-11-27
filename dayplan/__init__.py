@@ -63,16 +63,20 @@ def _redirect_to_dashboard(filters):
 def _render_dashboard(filters, form_values, errors, *, filter_errors=None):
     today = local_today(current_app.config["TIMEZONE"])
     invalid_filters = errors if filter_errors is None else filter_errors
+    daily = None
     if invalid_filters:
         tasks, due_today_tasks = [], []
     else:
-        result = list_tasks(get_db(), filters, today)
+        db = get_db()
+        result = list_tasks(db, filters, today)
         tasks, due_today_tasks = result.tasks, result.due_today_tasks
+        daily = task_service.get_summaries(db, today)["daily"]
 
     context = dict(
         tasks=tasks,
         due_today_tasks=due_today_tasks,
         today=today,
+        daily=daily,
         filters=filters,
         form_values=form_values,
         errors=errors,

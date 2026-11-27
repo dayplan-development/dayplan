@@ -7,22 +7,26 @@
 {% set status = filters.status if filters.status != 'All' else none %}
 {% set priority = filters.priority if filters.priority != 'All' else none %}
 
-{% if filter_errors %}
-<div class="form-alert" role="alert">
-  {% if filter_errors.status %}<p><strong>Status filter:</strong> {{ filter_errors.status }}</p>{% endif %}
-  {% if filter_errors.priority %}<p><strong>Priority filter:</strong> {{ filter_errors.priority }}</p>{% endif %}
-</div>
-{% endif %}
+<div class="edit-task-page">
+  <header class="edit-task-intro">
+    <h2 id="edit-task-heading">Edit task</h2>
+  </header>
 
-<form class="form-card" method="post" aria-labelledby="edit-task-heading"
-      action="{{ url_for('edit_task', task_id=task.id, status=status, priority=priority) }}">
-  <h2 id="edit-task-heading">Edit task</h2>
-
-  {{ task_fields('edit', form_values, errors, show_limits=true) }}
-
-  <div class="form-actions">
-    <button class="btn btn-primary" type="submit">Save changes</button>
-    <a class="btn btn-ghost" href="{{ url_for('dashboard', status=status, priority=priority) }}">Cancel</a>
+  {% if filter_errors %}
+  <div class="form-alert" role="alert">
+    {% if filter_errors.status %}<p><strong>Status filter:</strong> {{ filter_errors.status }}</p>{% endif %}
+    {% if filter_errors.priority %}<p><strong>Priority filter:</strong> {{ filter_errors.priority }}</p>{% endif %}
   </div>
-</form>
+  {% endif %}
+
+  <form class="form-card" method="post" aria-labelledby="edit-task-heading"
+        action="{{ url_for('edit_task', task_id=task.id, status=status, priority=priority) }}">
+    {{ task_fields('edit', form_values, errors, show_limits=true) }}
+
+    <div class="form-actions">
+      <button class="btn btn-primary" type="submit">Save changes</button>
+      <a class="btn btn-ghost" href="{{ url_for('dashboard', status=status, priority=priority) }}">Cancel</a>
+    </div>
+  </form>
+</div>
 {% endblock %}
