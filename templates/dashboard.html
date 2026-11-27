@@ -80,6 +80,7 @@
 {%- endmacro %}
 
 {% macro task_fields(prefix, form_values, task_errors, show_limits=false) %}
+  <script src="{{ url_for('static', filename='js/date-picker.js') }}" defer></script>
   {% set title_hint = show_limits and not task_errors.title %}
   {% set description_hint = show_limits and not task_errors.description %}
   <div class="field{% if task_errors.title %} has-error{% endif %}">
@@ -116,8 +117,37 @@
 
     <div class="field{% if task_errors.due_date %} has-error{% endif %}">
       <label for="{{ prefix }}-due-date">Due date (optional)</label>
-      <input id="{{ prefix }}-due-date" name="due_date" type="text" inputmode="numeric" placeholder="YYYY-MM-DD"
-             value="{{ input_value(form_values.due_date) }}"{{ error_attributes(prefix, 'due-date', task_errors.due_date) }}>
+      <div class="date-picker" data-date-picker>
+        <div class="date-picker-field">
+          <input id="{{ prefix }}-due-date" name="due_date" type="text" inputmode="numeric" placeholder="YYYY-MM-DD"
+                 value="{{ input_value(form_values.due_date) }}"{{ error_attributes(prefix, 'due-date', task_errors.due_date) }}>
+          <button class="date-picker-trigger" type="button" aria-label="Choose due date"
+                  aria-haspopup="dialog" aria-controls="{{ prefix }}-calendar" hidden>{{ icon('calendar') }}</button>
+        </div>
+        <dialog class="date-picker-dialog" id="{{ prefix }}-calendar" aria-labelledby="{{ prefix }}-calendar-label">
+          <header class="date-picker-header">
+            <h3 id="{{ prefix }}-calendar-label">Choose due date</h3>
+            <button class="date-picker-icon" type="button" data-calendar-close aria-label="Close calendar">&times;</button>
+          </header>
+          <div class="date-picker-month">
+            <button class="date-picker-icon" type="button" data-calendar-prev aria-label="Previous month">&lsaquo;</button>
+            <h4 id="{{ prefix }}-calendar-month" aria-live="polite" aria-atomic="true"></h4>
+            <button class="date-picker-icon" type="button" data-calendar-next aria-label="Next month">&rsaquo;</button>
+          </div>
+          <table class="date-picker-grid" role="grid" aria-labelledby="{{ prefix }}-calendar-month">
+            <thead><tr>
+              {% for day in ('Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday') %}
+              <th scope="col" aria-label="{{ day }}">{{ day[:2] }}</th>
+              {% endfor %}
+            </tr></thead>
+            <tbody></tbody>
+          </table>
+          <div class="date-picker-actions">
+            <button type="button" data-calendar-clear>Clear date</button>
+            <button type="button" data-calendar-today>Today</button>
+          </div>
+        </dialog>
+      </div>
       {{ field_error(prefix, 'due-date', task_errors.due_date) }}
     </div>
   </div>
