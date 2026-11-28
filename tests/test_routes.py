@@ -352,7 +352,10 @@ def test_dashboard_renders_full_task_text_and_actions_by_status(populated_dashbo
         for card in matching:
             assert f'href="/tasks/{task.id}/edit?priority=High"' in card
             assert f'method="post" action="/tasks/{task.id}/delete?priority=High"' in card
-            assert 'onsubmit="return confirm(\'Delete this task permanently?\')"' in card
+            assert 'data-delete-form' in card
+            assert 'type="button" data-delete-trigger' in card
+            assert f'data-task-title="{name}"' in card
+            assert 'aria-controls="delete-confirmation"' in card
             complete = f'method="post" action="/tasks/{task.id}/complete?priority=High"'
             if task.status == "Pending":
                 assert complete in card
@@ -1264,7 +1267,7 @@ def test_summaries_renders_exact_reports_using_one_service_call(populated_dashbo
     html = response.get_data(as_text=True)
     assert 'href="#daily">Daily</a>' in html and 'href="#weekly">Weekly</a>' in html
     assert 'href="/">Back to dashboard</a>' in html
-    assert "<h2>Your progress</h2>" in html
+    assert "<h2>Your <span>progress</span></h2>" in html
     values_by_section = {
         "daily": [
             ("Total tasks due today", "3"),

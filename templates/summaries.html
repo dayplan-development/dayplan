@@ -12,10 +12,10 @@
 {% block content %}
 <header class="summaries-intro">
   <div>
-    <h2>Your progress</h2>
+    <h2>Your <span>progress</span></h2>
     <p>See what’s due, what’s overdue, and what you’ve completed today and this week.</p>
   </div>
-  <a class="btn btn-ghost"
+  <a class="btn btn-ghost summaries-return"
      href="{{ url_for('dashboard', status=filters.status if filters.status != 'All' else none,
                       priority=filters.priority if filters.priority != 'All' else none) }}">Back to dashboard</a>
 </header>
@@ -31,9 +31,9 @@
     <p><time datetime="{{ daily.date.isoformat() }}">{{ daily.date.strftime('%d %B %Y') }}</time></p>
   </header>
   <dl class="summary-grid daily-metrics">
-    {{ stat('Total tasks due today', daily.due_total, 'sage') }}
-    {{ stat('Overdue tasks', daily.overdue, 'alert' if daily.overdue else '') }}
-    {{ stat('Tasks completed today', daily.completed_today, 'sage') }}
+    {{ stat('Total tasks due today', daily.due_total, 'navy') }}
+    {{ stat('Overdue tasks', daily.overdue, 'alert') }}
+    {{ stat('Tasks completed today', daily.completed_today, 'success') }}
   </dl>
   <dl class="summary-grid supporting-metrics" aria-label="Due today by status">
     {{ stat('Pending tasks due today', daily.due_pending) }}
@@ -50,7 +50,7 @@
     </p>
   </header>
   <div class="weekly-layout">
-    <div class="completion-panel">
+    <div class="completion-panel{% if weekly.completion_rate is none %} is-empty{% endif %}">
       <h4 id="completion-heading">Weekly completion rate</h4>
       {% if weekly.completion_rate is none %}
       <p><span class="stat-empty">No tasks due</span></p>

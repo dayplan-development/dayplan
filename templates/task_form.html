@@ -19,7 +19,7 @@
   </div>
   {% endif %}
 
-  <form class="form-card" method="post" aria-labelledby="edit-task-heading"
+  <form class="form-card edit-task-form" method="post" aria-labelledby="edit-task-heading"
         action="{{ url_for('edit_task', task_id=task.id, status=status, priority=priority) }}">
     {{ task_fields('edit', form_values, errors, show_limits=true) }}
 
