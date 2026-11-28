@@ -60,8 +60,9 @@
          href="{{ url_for('edit_task', task_id=task.id, status=status, priority=priority) }}"
          aria-label="Edit {{ task.title }}">{{ icon('edit') }} Edit</a>
       <form method="post" action="{{ url_for('delete_task', task_id=task.id, status=status, priority=priority) }}"
-            onsubmit="return confirm('Delete this task permanently?')">
-        <button class="btn btn-danger btn-small" type="submit" aria-label="Delete {{ task.title }}">{{ icon('delete') }}</button>
+            data-delete-form>
+        <button class="btn btn-danger btn-small" type="button" data-delete-trigger data-task-title="{{ task.title }}"
+                aria-label="Delete {{ task.title }}" aria-haspopup="dialog" aria-controls="delete-confirmation" disabled>{{ icon('delete') }}</button>
       </form>
     </div>
   </article>
@@ -86,14 +87,14 @@
   <div class="field{% if task_errors.title %} has-error{% endif %}">
     <label for="{{ prefix }}-title">Title <span class="required" aria-hidden="true">*</span></label>
     <input id="{{ prefix }}-title" name="title" type="text" required maxlength="100"
-           value="{{ input_value(form_values.title) }}"{{ error_attributes(prefix, 'title', task_errors.title) }}{% if title_hint %} aria-describedby="{{ prefix }}-title-hint"{% endif %}>
+           value="{{ input_value(form_values.title) }}"{{ error_attributes(prefix, 'title', task_errors.title) }}{% if title_hint %} aria-describedby="{{ prefix }}-title-hint"{% endif %}{% if prefix == 'create' %} placeholder="Enter task title"{% endif %}>
     {% if title_hint %}<span class="hint" id="{{ prefix }}-title-hint">Maximum 100 characters.</span>{% endif %}
     {{ field_error(prefix, 'title', task_errors.title) }}
   </div>
 
   <div class="field{% if task_errors.description %} has-error{% endif %}">
     <label for="{{ prefix }}-description">Description (optional)</label>
-    <textarea id="{{ prefix }}-description" name="description" rows="4" maxlength="500"{{ error_attributes(prefix, 'description', task_errors.description) }}{% if description_hint %} aria-describedby="{{ prefix }}-description-hint"{% endif %}>
+    <textarea id="{{ prefix }}-description" name="description" rows="4" maxlength="500"{{ error_attributes(prefix, 'description', task_errors.description) }}{% if description_hint %} aria-describedby="{{ prefix }}-description-hint"{% endif %}{% if prefix == 'create' %} placeholder="Add more details"{% endif %}>
 {{ input_value(form_values.description) }}</textarea>
     {% if description_hint %}<span class="hint" id="{{ prefix }}-description-hint">Maximum 500 characters.</span>{% endif %}
     {{ field_error(prefix, 'description', task_errors.description) }}
@@ -159,24 +160,30 @@
 <header class="dashboard-intro">
   <div>
     <time datetime="{{ today.isoformat() }}">{{ today.strftime('%A, %d %B %Y') }}</time>
-    <h2>Your day</h2>
+    <h2>Your <span>day</span></h2>
+    <p>Plan, track and complete your tasks with DayPlan.</p>
   </div>
-  <nav class="dashboard-links" aria-label="Dashboard navigation">
-    <a class="btn btn-ghost"
-       href="{{ url_for('summaries', status=filters.status if filters.status != 'All' else none,
-                        priority=filters.priority if filters.priority != 'All' else none) }}">Summaries</a>
+  <div class="dashboard-links">
     {% if task_errors %}
     <a class="btn btn-primary" href="#new-task">Review task form</a>
     {% else %}
     <a class="btn btn-primary dashboard-create-link" href="#new-task">Create task</a>
     {% endif %}
-  </nav>
+  </div>
 </header>
 
 {% if daily is not none %}
 <dl class="dashboard-overview" aria-label="Daily overview">
   <div class="overview-metric">
-    <dt>{{ icon('calendar') }} Due today</dt>
+    <dt>
+      <svg class="metric-wave" viewBox="0 0 246 92" fill="none" aria-hidden="true">
+        <defs><path id="metric-contour" d="M0 94C50 92 75 36 119 41S163 78 188 42 212 5 246 3"/></defs>
+        {% for offset in range(0, 28, 3) %}
+        <use href="#metric-contour" transform="translate(0 {{ offset }})"/>
+        {% endfor %}
+      </svg>
+      {{ icon('calendar') }} Due today
+    </dt>
     <dd>{{ daily.due_total }}</dd>
   </div>
   <div class="overview-metric overview-overdue">
@@ -209,7 +216,7 @@
         </select>
         {% if navigation_errors.priority %}<span class="field-error" id="priority-error">{{ navigation_errors.priority }}</span>{% endif %}
       </label>
-      <button class="btn btn-ghost" type="submit">Apply</button>
+      <button class="btn btn-primary" type="submit">Apply</button>
       <a class="filter-reset" href="{{ url_for('dashboard') }}">Reset</a>
     </form>
 
@@ -220,7 +227,20 @@
         {% for row in due_today_tasks %}
         {{ task_card(row, filters, today) }}
         {% else %}
-        <p class="empty-state">No pending tasks due today match these filters.</p>
+        <div class="dashboard-empty">
+          <svg class="empty-clipboard" viewBox="0 0 104 96" fill="none" aria-hidden="true">
+            <path d="m18 84 45-64 30 64Z" fill="#8B909B" opacity=".09"/>
+            <rect x="18" y="24" width="58" height="62" rx="8" stroke="#8B909B" stroke-width="3.5"/>
+            <path d="M36 29v-7a4 4 0 0 1 4-4h3a5 5 0 0 1 10 0h3a4 4 0 0 1 4 4v7Z" fill="#F4F1EA" stroke="#8B909B" stroke-width="3"/>
+            <path d="M31 43h8v8h-8zM31 62h8v8h-8zM56 47l4 3 6-8m-10 24 4 3 6-8M77 13l4-8m5 17 9-5m-6 20 9 1"
+                  stroke="#FF5A4E" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M44 44h8m-8 6h7m-7 13h8m-8 6h7" stroke="#8B909B" stroke-width="2" stroke-linecap="round" opacity=".65"/>
+          </svg>
+          <div class="dashboard-empty-copy">
+            <p class="dashboard-empty-title"><strong>{{ 'No pending tasks today' if filters.status == 'All' and filters.priority == 'All' else 'No matching tasks due today' }}</strong></p>
+            <p class="empty-state">No pending tasks due today match these filters.</p>
+          </div>
+        </div>
         {% endfor %}
       </div>
     </section>
@@ -247,9 +267,20 @@
       {{ task_fields('create', form_values, task_errors) }}
 
       <div class="form-actions">
-        <button class="btn btn-primary" type="submit">Add task</button>
+        <button class="btn btn-primary add-task-button" type="submit">Add task</button>
       </div>
     </form>
   </aside>
 </div>
+<dialog class="delete-dialog" id="delete-confirmation" aria-labelledby="delete-heading" aria-describedby="delete-task-title delete-warning">
+  <div class="delete-dialog-icon">{{ icon('delete') }}</div>
+  <h2 id="delete-heading">Delete this task?</h2>
+  <p id="delete-task-title" class="delete-task-title"></p>
+  <p id="delete-warning">This action cannot be undone.</p>
+  <div class="delete-dialog-actions">
+    <button class="btn btn-ghost" type="button" data-delete-cancel autofocus>Cancel</button>
+    <button class="btn btn-primary" type="button" data-delete-confirm>Delete task</button>
+  </div>
+</dialog>
+<script src="{{ url_for('static', filename='js/delete-confirmation.js') }}" defer></script>
 {% endblock %}

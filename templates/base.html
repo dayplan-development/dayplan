@@ -7,9 +7,33 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
 <body>
-  <header class="site-header">
-    <div class="container header-inner">
-      <a class="brand" href="/"><h1>DayPlan</h1></a>
+  {% set nav_status = filters.status if filters is defined and filters.status != 'All' else none %}
+  {% set nav_priority = filters.priority if filters is defined and filters.priority != 'All' else none %}
+  {% set on_dashboard = request.endpoint != 'summaries' %}
+  <header class="site-sidebar">
+    <a class="brand" href="{{ url_for('dashboard', status=nav_status, priority=nav_priority) }}">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <rect x="3" y="5" width="18" height="16" rx="3"/><path d="M7 3v4m10-4v4m-9 7 2.5 2.5L16 11"/>
+      </svg>
+      <h1>DayPlan</h1>
+    </a>
+    <nav class="site-nav" aria-label="Main navigation">
+      <a class="nav-link nav-dashboard{% if on_dashboard %} is-current{% endif %}"{% if on_dashboard %} aria-current="{{ 'location' if request.endpoint == 'edit_task' else 'page' }}"{% endif %}
+         href="{{ url_for('dashboard', status=nav_status, priority=nav_priority) }}">Dashboard</a>
+      <a class="nav-link nav-summaries{% if not on_dashboard %} is-current{% endif %}"{% if not on_dashboard %} aria-current="page"{% endif %}
+         href="{{ url_for('summaries', status=nav_status, priority=nav_priority) }}">Summaries</a>
+    </nav>
+    <div class="sidebar-note">
+      <svg class="sidebar-landscape" viewBox="0 0 240 112" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+        <defs>
+          <linearGradient id="sidebar-ridge" x2="0" y2="1" gradientUnits="objectBoundingBox">
+            <stop offset="0" stop-color="#FF5A4E" stop-opacity=".8"/>
+            <stop offset="1" stop-color="#FF5A4E" stop-opacity="0"/>
+          </linearGradient>
+        </defs>
+        <path d="M0 78 34 47Q39 43 44 46L99 79 143 56 188 74 240 48V112H0Z" fill="#8B909B" opacity=".16"/>
+        <path d="m74 112 76-66q5-5 10 0l19 17 29-41q5-7 10 0l22 28v62Z" fill="url(#sidebar-ridge)"/>
+      </svg>
       <p class="tagline">Plan your day. Own your time.</p>
     </div>
   </header>

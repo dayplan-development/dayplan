@@ -54,23 +54,25 @@
       previous.disabled = year === 1 && month === 0;
       next.disabled = year === 9999 && month === 11;
       const leading = (makeDate(year, month, 1).getUTCDay() + 6) % 7;
-      const days = makeDate(year, month + 1, 0).getUTCDate();
       grid.replaceChildren();
-      for (let index = 0; index < Math.ceil((leading + days) / 7) * 7; index++) {
+      for (let index = 0; index < 42; index++) {
         if (index % 7 === 0) grid.insertRow();
         const cell = grid.rows[grid.rows.length - 1].insertCell();
-        const number = index - leading + 1;
-        if (number < 1 || number > days) continue;
-        const date = makeDate(year, month, number);
-        const value = iso(date);
+        const date = makeDate(year, month, index - leading + 1);
         const day = document.createElement("button");
         day.type = "button";
-        day.dataset.date = value;
-        day.textContent = number;
+        day.textContent = date.getUTCDate();
         day.setAttribute("aria-label", dayLabel.format(date));
-        day.tabIndex = number === cursor.getUTCDate() ? 0 : -1;
-        cell.setAttribute("aria-selected", String(value === selected));
-        if (value === today) day.setAttribute("aria-current", "date");
+        day.tabIndex = date.getTime() === cursor.getTime() ? 0 : -1;
+        if (date.getUTCMonth() !== month) day.classList.add("is-adjacent");
+        if (date.getUTCFullYear() < 1 || date.getUTCFullYear() > 9999) {
+          day.disabled = true;
+        } else {
+          const value = iso(date);
+          day.dataset.date = value;
+          cell.setAttribute("aria-selected", String(value === selected));
+          if (value === today) day.setAttribute("aria-current", "date");
+        }
         cell.append(day);
       }
     }
