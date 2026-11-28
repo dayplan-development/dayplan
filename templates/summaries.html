@@ -15,9 +15,14 @@
     <h2>Your <span>progress</span></h2>
     <p>See what’s due, what’s overdue, and what you’ve completed today and this week.</p>
   </div>
-  <a class="btn btn-ghost summaries-return"
+  <a class="btn summaries-return"
      href="{{ url_for('dashboard', status=filters.status if filters.status != 'All' else none,
-                      priority=filters.priority if filters.priority != 'All' else none) }}">Back to dashboard</a>
+                      priority=filters.priority if filters.priority != 'All' else none) }}">
+    <svg class="summaries-return-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M19 12H5m6 6-6-6 6-6"/>
+    </svg>
+    Dashboard
+  </a>
 </header>
 
 <nav class="summaries-nav" aria-label="Summary navigation">

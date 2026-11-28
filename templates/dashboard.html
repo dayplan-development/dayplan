@@ -23,7 +23,7 @@
 
 {% macro task_card(row, filters, today) %}
   {% set task = row.task %}
-  <article class="task-card priority-{{ task.priority|lower }}{% if task.status == 'Completed' %} is-done{% endif %}{% if row.is_overdue %} is-overdue{% endif %}">
+  <article class="task-card priority-{{ task.priority|lower }}{% if task.status == 'Completed' %} is-done{% endif %}{% if row.is_overdue %} is-overdue{% endif %}" data-task-id="{{ task.id }}">
     <span class="task-marker" aria-hidden="true">{% if task.status == 'Completed' %}{{ icon('check') }}{% endif %}</span>
     <div class="task-main">
       <h3 class="task-title">{{ task.title }}</h3>
@@ -53,6 +53,7 @@
       {% set priority = filters.priority if filters.priority != 'All' else none %}
       {% if task.status == 'Pending' %}
       <form method="post" action="{{ url_for('complete_task', task_id=task.id, status=status, priority=priority) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <button class="btn btn-primary btn-small" type="submit" aria-label="Complete {{ task.title }}">{{ icon('check') }} Complete</button>
       </form>
       {% endif %}
@@ -61,6 +62,7 @@
          aria-label="Edit {{ task.title }}">{{ icon('edit') }} Edit</a>
       <form method="post" action="{{ url_for('delete_task', task_id=task.id, status=status, priority=priority) }}"
             data-delete-form>
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <button class="btn btn-danger btn-small" type="button" data-delete-trigger data-task-title="{{ task.title }}"
                 aria-label="Delete {{ task.title }}" aria-haspopup="dialog" aria-controls="delete-confirmation" disabled>{{ icon('delete') }}</button>
       </form>
@@ -167,7 +169,7 @@
     {% if task_errors %}
     <a class="btn btn-primary" href="#new-task">Review task form</a>
     {% else %}
-    <a class="btn btn-primary dashboard-create-link" href="#new-task">Create task</a>
+    <a class="btn btn-primary dashboard-create-link" href="#new-task"><span aria-hidden="true">+</span> Create task</a>
     {% endif %}
   </div>
 </header>
@@ -263,6 +265,7 @@
           action="{{ url_for('create_task', status=filters.status if filters.status != 'All' else none,
                              priority=filters.priority if filters.priority != 'All' else none) }}">
       <h2 id="new-task-heading">New task</h2>
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
       {{ task_fields('create', form_values, task_errors) }}
 

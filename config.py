@@ -1,3 +1,4 @@
+from datetime import timedelta
 from os import environ
 from pathlib import Path
 
@@ -5,10 +6,24 @@ from pathlib import Path
 class DevelopmentConfig:
     TESTING = False
     TIMEZONE = "Asia/Kolkata"
+    SESSION_COOKIE_HTTPONLY = True
+    SESSION_COOKIE_SAMESITE = "Lax"
+    SESSION_COOKIE_SECURE = None
+    PERMANENT_SESSION_LIFETIME = timedelta(hours=8)
+    SESSION_REFRESH_EACH_REQUEST = False
 
 
 class TestingConfig(DevelopmentConfig):
     TESTING = True
+
+
+def resolve_secure_cookie(configured):
+    if configured is not None:
+        return configured
+    value = environ.get("DAYPLAN_SESSION_COOKIE_SECURE", "false").lower()
+    if value not in {"true", "false"}:
+        raise RuntimeError("Set DAYPLAN_SESSION_COOKIE_SECURE to true or false.")
+    return value == "true"
 
 
 def resolve_secret_key(configured_key):

@@ -4,7 +4,13 @@ Daily Task and Reminder Manager
 
 Plan your day. Own your time.
 
-DayPlan is a Flask app for managing a single task list stored in SQLite. You can create, edit, complete, and delete tasks, set optional due dates and priorities, filter by status or priority, and view daily and weekly summaries. DayPlan uses `Asia/Kolkata` for calendar dates and counts overdue tasks separately from tasks due today.
+DayPlan is a Flask and SQLite task manager. Each signed-in user has a private task list with task creation, editing, completion, deletion, optional due dates and priorities, filters, and daily and weekly summaries. DayPlan uses `Asia/Kolkata` for calendar dates and counts overdue tasks separately from tasks due today.
+
+## Demo accounts
+
+After database initialization, sign in as `christiv`, `sanjay`, or `charu`. Each account starts with the demonstration password `12345678`. SQLite stores password hashes. The shared password is public, so use these accounts only for a local or access-restricted demo and keep real data out of them. Account creation is unavailable.
+
+Before upgrading an existing installation, stop the app and back up the SQLite database. Run `init-db` against that same database. The upgrade preserves existing tasks and assigns them to `christiv`. Running the command again preserves task ownership and existing passwords.
 
 ## Development setup on Windows
 
@@ -86,11 +92,13 @@ The [Python tests workflow](.github/workflows/python-tests.yml) uses Python 3.13
 | `dayplan/` | App factory, routes, task services, validation, SQLite access, date handling, and summary calculations. |
 | `templates/` | Jinja templates for the dashboard, edit form, and summaries. |
 | `static/css/` | Application styles. |
-| `static/js/` | `notifications.js` handles flash notification dismissal. |
+| `static/js/` | Calendar, flash dismissal, delete confirmation, and password visibility. |
 | `tests/` | Backend and Flask route tests. |
 | `docs/` | Project requirements, architecture, database schema, API contract, and team workflow. |
 | `.github/workflows/` | GitHub Actions test workflow. |
 
 ## Deployment configuration
 
-The commands above are for local development. For a hosted deployment, use a production WSGI server with debug mode off, configure a separate `SECRET_KEY` through the host's secret settings, set `DATABASE_PATH` to a writable persistent location, and run `init-db` against that path. The baseline demo is local. Render is optional.
+The commands above are for local development. For a hosted deployment, use a production WSGI server with debug mode off, configure a separate `SECRET_KEY` through the host's secret settings, set `DATABASE_PATH` to a writable persistent location, and run `init-db` against that path before serving requests. Set `DAYPLAN_SESSION_COOKIE_SECURE=true` on HTTPS deployments. Session cookies are HttpOnly and SameSite=Lax and expire after eight hours. Task-changing forms, login, and logout require a CSRF token.
+
+Restrict access at the hosting layer for a remote demo. A public production launch requires replacing the known demo credentials, implementing login rate limiting, and verifying persistent storage and HTTPS. Render is optional and has not been verified.

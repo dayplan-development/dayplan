@@ -26,17 +26,17 @@ def db(tmp_path):
 def test_create_update_complete_and_repeat_preserves_completion(db):
     task = task_service.create_task(db, {
         "title": "  Study  ", "description": "  Notes ", "due_date": "2026-11-24", "priority": "High",
-    })
+    }, user_id=1)
     assert task.title == "Study"
     assert task.status == "Pending"
 
     unchanged = task_service.update_task(db, task.id, {
         "title": "Study", "description": "Notes", "due_date": "2026-11-24", "priority": "High",
-    })
+    }, user_id=1)
     assert unchanged.changed is False
 
-    completed = task_service.complete_task(db, task.id, date(2026, 11, 25))
-    repeated = task_service.complete_task(db, task.id, date(2026, 11, 26))
+    completed = task_service.complete_task(db, task.id, date(2026, 11, 25), user_id=1)
+    repeated = task_service.complete_task(db, task.id, date(2026, 11, 26), user_id=1)
     assert completed.changed is True
     assert repeated.changed is False
     assert repeated.task.completed_on == date(2026, 11, 25)
@@ -44,7 +44,7 @@ def test_create_update_complete_and_repeat_preserves_completion(db):
 
 def test_validation_rejects_impossible_date_and_repeated_filter():
     with pytest.raises(ValidationError) as date_error:
-        task_service.create_task(None, {"title": "Task", "due_date": "2026-02-30", "priority": "Low"})
+        task_service.create_task(None, {"title": "Task", "due_date": "2026-02-30", "priority": "Low"}, user_id=1)
     assert "due_date" in date_error.value.errors
 
     with pytest.raises(ValidationError):
@@ -52,11 +52,11 @@ def test_validation_rejects_impossible_date_and_repeated_filter():
 
 
 def test_daily_and_weekly_summaries_use_status_and_due_date(db):
-    pending = task_service.create_task(db, {"title": "Past", "due_date": "2026-11-20", "priority": "Low"})
-    today = task_service.create_task(db, {"title": "Today", "due_date": "2026-11-21", "priority": "Medium"})
-    task_service.complete_task(db, pending.id, date(2026, 11, 21))
-    task_service.create_task(db, {"title": "Sunday", "due_date": "2026-11-22", "priority": "High"})
-    summaries = task_service.get_summaries(db, date(2026, 11, 21))
+    pending = task_service.create_task(db, {"title": "Past", "due_date": "2026-11-20", "priority": "Low"}, user_id=1)
+    today = task_service.create_task(db, {"title": "Today", "due_date": "2026-11-21", "priority": "Medium"}, user_id=1)
+    task_service.complete_task(db, pending.id, date(2026, 11, 21), user_id=1)
+    task_service.create_task(db, {"title": "Sunday", "due_date": "2026-11-22", "priority": "High"}, user_id=1)
+    summaries = task_service.get_summaries(db, date(2026, 11, 21), user_id=1)
 
     assert summaries["daily"]["due_total"] == 1
     assert summaries["daily"]["due_pending"] == 1
@@ -68,13 +68,13 @@ def test_daily_and_weekly_summaries_use_status_and_due_date(db):
 
 def test_daily_summary_counts_completed_tasks_by_due_and_completion_dates(db):
     today = date(2026, 11, 21)
-    due_today = task_service.create_task(db, {"title": "Due today", "due_date": "2026-11-21"})
-    past_due = task_service.create_task(db, {"title": "Finished late", "due_date": "2026-11-20"})
-    task_service.create_task(db, {"title": "Still overdue", "due_date": "2026-11-20"})
-    task_service.complete_task(db, due_today.id, today)
-    task_service.complete_task(db, past_due.id, today)
+    due_today = task_service.create_task(db, {"title": "Due today", "due_date": "2026-11-21"}, user_id=1)
+    past_due = task_service.create_task(db, {"title": "Finished late", "due_date": "2026-11-20"}, user_id=1)
+    task_service.create_task(db, {"title": "Still overdue", "due_date": "2026-11-20"}, user_id=1)
+    task_service.complete_task(db, due_today.id, today, user_id=1)
+    task_service.complete_task(db, past_due.id, today, user_id=1)
 
-    assert task_service.get_summaries(db, today)["daily"] == {
+    assert task_service.get_summaries(db, today, user_id=1)["daily"] == {
         "date": today,
         "due_total": 1,
         "due_pending": 0,
@@ -111,14 +111,14 @@ def test_weekly_summary_includes_both_boundaries_across_years(db):
         ("Last day of this week", "2025-01-05"),
         ("Next Monday", "2025-01-06"),
     ):
-        task_service.create_task(db, {"title": title, "due_date": due_date})
-    task_service.create_task(db, {"title": "Undated"})
-    completed = task_service.create_task(db, {"title": "Finished late", "due_date": "2024-12-31"})
-    task_service.complete_task(db, completed.id, today)
-    completed_early = task_service.create_task(db, {"title": "Finished early", "due_date": "2025-01-02"})
-    task_service.complete_task(db, completed_early.id, date(2024, 12, 29))
+        task_service.create_task(db, {"title": title, "due_date": due_date}, user_id=1)
+    task_service.create_task(db, {"title": "Undated"}, user_id=1)
+    completed = task_service.create_task(db, {"title": "Finished late", "due_date": "2024-12-31"}, user_id=1)
+    task_service.complete_task(db, completed.id, today, user_id=1)
+    completed_early = task_service.create_task(db, {"title": "Finished early", "due_date": "2025-01-02"}, user_id=1)
+    task_service.complete_task(db, completed_early.id, date(2024, 12, 29), user_id=1)
 
-    assert task_service.get_summaries(db, today)["weekly"] == {
+    assert task_service.get_summaries(db, today, user_id=1)["weekly"] == {
         "week_start": date(2024, 12, 30),
         "week_end": date(2025, 1, 5),
         "due_total": 4,
@@ -132,9 +132,9 @@ def test_weekly_summary_includes_both_boundaries_across_years(db):
 @pytest.mark.parametrize("due_date", [None, "2026-11-15", "2026-11-23"])
 def test_weekly_summary_has_no_rate_when_no_tasks_are_due(db, due_date):
     if due_date is not None:
-        task_service.create_task(db, {"title": "Due outside this week", "due_date": due_date})
+        task_service.create_task(db, {"title": "Due outside this week", "due_date": due_date}, user_id=1)
 
-    assert task_service.get_summaries(db, date(2026, 11, 21))["weekly"] == {
+    assert task_service.get_summaries(db, date(2026, 11, 21), user_id=1)["weekly"] == {
         "week_start": date(2026, 11, 16),
         "week_end": date(2026, 11, 22),
         "due_total": 0,
@@ -146,9 +146,9 @@ def test_weekly_summary_has_no_rate_when_no_tasks_are_due(db, due_date):
 
 
 def test_weekly_summary_returns_zero_rate_when_due_tasks_are_all_pending(db):
-    task_service.create_task(db, {"title": "Still pending", "due_date": "2026-11-21"})
+    task_service.create_task(db, {"title": "Still pending", "due_date": "2026-11-21"}, user_id=1)
 
-    assert task_service.get_summaries(db, date(2026, 11, 21))["weekly"] == {
+    assert task_service.get_summaries(db, date(2026, 11, 21), user_id=1)["weekly"] == {
         "week_start": date(2026, 11, 16),
         "week_end": date(2026, 11, 22),
         "due_total": 1,
@@ -164,12 +164,12 @@ def test_initialize_database_preserves_saved_tasks_when_reopened(tmp_path):
     database.initialize_database(database_path)
 
     with closing(database.get_connection(database_path)) as connection:
-        task = task_service.create_task(connection, {"title": "Keep this task"})
+        task = task_service.create_task(connection, {"title": "Keep this task"}, user_id=1)
 
     database.initialize_database(str(database_path))
 
     with closing(database.get_connection(database_path)) as connection:
-        assert task_service.get_task(connection, task.id) == task
+        assert task_service.get_task(connection, task.id, user_id=1) == task
 
 
 def test_get_connection_configures_rows_and_close_connection_closes_it(tmp_path):
@@ -207,7 +207,7 @@ def test_initializer_closes_its_connection(tmp_path, monkeypatch, schema_fails):
 def test_schema_supplies_task_and_utc_timestamp_defaults(db):
     with database.transaction(db):
         task_id = db.execute(
-            "INSERT INTO tasks (title) VALUES (?)", ("Only a title",)
+            "INSERT INTO tasks (user_id, title) VALUES (1, ?)", ("Only a title",)
         ).lastrowid
     row = db.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
 
@@ -218,7 +218,7 @@ def test_schema_supplies_task_and_utc_timestamp_defaults(db):
     assert row["completed_on"] is None
     assert row["created_at"] == row["updated_at"]
     assert len(row["created_at"]) == 20 and row["created_at"].endswith("Z")
-    assert task_service.get_task(db, task_id).created_at.utcoffset().total_seconds() == 0
+    assert task_service.get_task(db, task_id, user_id=1).created_at.utcoffset().total_seconds() == 0
 
 
 @pytest.mark.parametrize(
@@ -234,18 +234,18 @@ def test_schema_supplies_task_and_utc_timestamp_defaults(db):
 def test_schema_rejects_invalid_dates_and_completion_state(db, due_date, status, completed_on):
     with pytest.raises(sqlite3.IntegrityError), database.transaction(db):
         db.execute(
-            "INSERT INTO tasks (title, due_date, status, completed_on) VALUES (?, ?, ?, ?)",
+            "INSERT INTO tasks (user_id, title, due_date, status, completed_on) VALUES (1, ?, ?, ?, ?)",
             ("Task", due_date, status, completed_on),
         )
 
 
 def test_editing_completed_task_reports_changes_and_preserves_completion(db, monkeypatch):
-    task = task_service.create_task(db, {"title": "Original"})
-    completed = task_service.complete_task(db, task.id, date(2026, 11, 25)).task
+    task = task_service.create_task(db, {"title": "Original"}, user_id=1)
+    completed = task_service.complete_task(db, task.id, date(2026, 11, 25), user_id=1).task
     monkeypatch.setattr(database, "utc_now", lambda: "2026-11-27T12:00:00Z")
     fields = {"title": "Edited", "priority": "Medium"}
 
-    updated = task_service.update_task(db, task.id, fields)
+    updated = task_service.update_task(db, task.id, fields, user_id=1)
 
     assert updated.changed is True
     assert updated.task.title == "Edited"
@@ -255,8 +255,8 @@ def test_editing_completed_task_reports_changes_and_preserves_completion(db, mon
     assert updated.task.updated_at.isoformat() == "2026-11-27T12:00:00+00:00"
 
     monkeypatch.setattr(database, "utc_now", lambda: "2026-11-28T12:00:00Z")
-    unchanged = task_service.update_task(db, task.id, fields)
-    repeated_completion = task_service.complete_task(db, task.id, date(2026, 11, 28))
+    unchanged = task_service.update_task(db, task.id, fields, user_id=1)
+    repeated_completion = task_service.complete_task(db, task.id, date(2026, 11, 28), user_id=1)
 
     assert unchanged.changed is False
     assert unchanged.task == updated.task
@@ -266,20 +266,20 @@ def test_editing_completed_task_reports_changes_and_preserves_completion(db, mon
 
 def test_mutations_report_missing_task(db):
     with pytest.raises(TaskNotFound):
-        task_service.update_task(db, 1, {"title": "Missing", "priority": "Medium"})
+        task_service.update_task(db, 1, {"title": "Missing", "priority": "Medium"}, user_id=1)
     with pytest.raises(TaskNotFound):
-        task_service.complete_task(db, 1, date(2026, 11, 25))
+        task_service.complete_task(db, 1, date(2026, 11, 25), user_id=1)
     with pytest.raises(TaskNotFound):
-        task_service.delete_task(db, 1)
+        task_service.delete_task(db, 1, user_id=1)
 
 
 def test_delete_reports_success_only_when_a_row_was_deleted(db):
-    task = task_service.create_task(db, {"title": "Delete me"})
+    task = task_service.create_task(db, {"title": "Delete me"}, user_id=1)
 
-    assert task_service.delete_task(db, task.id) is None
-    assert database.get_task(db, task.id) is None
+    assert task_service.delete_task(db, task.id, user_id=1) is None
+    assert database.get_task(db, task.id, user_id=1) is None
     with pytest.raises(TaskNotFound):
-        task_service.delete_task(db, task.id)
+        task_service.delete_task(db, task.id, user_id=1)
 
 
 def test_transaction_rolls_back_partial_write_after_reopening(tmp_path):
@@ -287,22 +287,22 @@ def test_transaction_rolls_back_partial_write_after_reopening(tmp_path):
     database.initialize_database(database_path)
 
     with closing(database.get_connection(database_path)) as connection:
-        task_service.create_task(connection, {"title": "Keep this task"})
+        task_service.create_task(connection, {"title": "Keep this task"}, user_id=1)
         with pytest.raises(sqlite3.IntegrityError), database.transaction(connection):
-            connection.execute("INSERT INTO tasks (title) VALUES (?)", ("Partial write",))
+            connection.execute("INSERT INTO tasks (user_id, title) VALUES (1, ?)", ("Partial write",))
             connection.execute(
-                "INSERT INTO tasks (title, priority) VALUES (?, ?)", ("Invalid", "Urgent")
+                "INSERT INTO tasks (user_id, title, priority) VALUES (1, ?, ?)", ("Invalid", "Urgent")
             )
 
     with closing(database.get_connection(database_path)) as connection:
-        assert [task.title for task in database.list_tasks(connection)] == ["Keep this task"]
+        assert [task.title for task in database.list_tasks(connection, user_id=1)] == ["Keep this task"]
 
 
 def test_concurrent_completions_report_exactly_one_change(tmp_path, monkeypatch):
     database_path = tmp_path / "tasks.sqlite3"
     database.initialize_database(database_path)
     with closing(database.get_connection(database_path)) as connection:
-        task_id = task_service.create_task(connection, {"title": "Finish once"}).id
+        task_id = task_service.create_task(connection, {"title": "Finish once"}, user_id=1).id
 
     start = Barrier(2)
     completion_dates = (date(2026, 11, 25), date(2026, 11, 26))
@@ -318,7 +318,7 @@ def test_concurrent_completions_report_exactly_one_change(tmp_path, monkeypatch)
 
     def complete_on(today):
         with closing(database.get_connection(database_path)) as connection:
-            return task_service.complete_task(connection, task_id, today)
+            return task_service.complete_task(connection, task_id, today, user_id=1)
 
     with ThreadPoolExecutor(max_workers=2) as workers:
         results = list(workers.map(complete_on, completion_dates, timeout=15))
@@ -326,6 +326,6 @@ def test_concurrent_completions_report_exactly_one_change(tmp_path, monkeypatch)
     assert sum(result.changed for result in results) == 1
     winning_date = next(day for day, result in zip(completion_dates, results) if result.changed)
     with closing(database.get_connection(database_path)) as connection:
-        saved = task_service.get_task(connection, task_id)
+        saved = task_service.get_task(connection, task_id, user_id=1)
     assert saved.completed_on == winning_date
     assert all(result.task == saved for result in results)

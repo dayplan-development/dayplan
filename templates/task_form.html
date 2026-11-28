@@ -21,6 +21,7 @@
 
   <form class="form-card edit-task-form" method="post" aria-labelledby="edit-task-heading"
         action="{{ url_for('edit_task', task_id=task.id, status=status, priority=priority) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     {{ task_fields('edit', form_values, errors, show_limits=true) }}
 
     <div class="form-actions">

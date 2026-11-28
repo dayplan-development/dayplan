@@ -1,11 +1,13 @@
 from pathlib import Path
+from secrets import compare_digest, token_urlsafe
 
 import click
 from flask import (
-    Flask, Response, abort, current_app, flash, g, redirect, render_template, request, url_for,
+    Flask, Response, abort, current_app, flash, g, redirect, render_template, request, session, url_for,
 )
+from werkzeug.security import check_password_hash, generate_password_hash
 
-from config import DevelopmentConfig, resolve_database_path, resolve_secret_key
+from config import DevelopmentConfig, resolve_database_path, resolve_secret_key, resolve_secure_cookie
 
 from . import database, task_service
 from .date_service import local_today
@@ -15,6 +17,14 @@ from .validators import TaskNotFound, ValidationError, validate_filters, validat
 
 TASK_FIELDS = ("title", "description", "due_date", "priority")
 MAX_TASK_ID = 2**63 - 1
+LOGIN_ERROR = "Incorrect username or password. Please try again."
+DUMMY_PASSWORD_HASH = generate_password_hash(token_urlsafe())
+
+
+def csrf_token():
+    if "csrf_token" not in session:
+        session["csrf_token"] = token_urlsafe(32)
+    return session["csrf_token"]
 
 
 def _read_single_values(source, names):
@@ -68,9 +78,9 @@ def _render_dashboard(filters, form_values, errors, *, filter_errors=None):
         tasks, due_today_tasks = [], []
     else:
         db = get_db()
-        result = list_tasks(db, filters, today)
+        result = list_tasks(db, filters, today, user_id=session["user_id"])
         tasks, due_today_tasks = result.tasks, result.due_today_tasks
-        daily = task_service.get_summaries(db, today)["daily"]
+        daily = task_service.get_summaries(db, today, user_id=session["user_id"])["daily"]
 
     context = dict(
         tasks=tasks,
@@ -108,10 +118,59 @@ def create_app(config_class=DevelopmentConfig):
     )
     app.config.from_object(config_class)
     app.secret_key = resolve_secret_key(app.secret_key)
+    app.config["SESSION_COOKIE_SECURE"] = resolve_secure_cookie(app.config["SESSION_COOKIE_SECURE"])
     app.config["DATABASE_PATH"] = resolve_database_path(
         app.config.get("DATABASE_PATH"), app.instance_path
     )
     app.teardown_appcontext(close_db)
+    app.add_template_global(csrf_token)
+
+    @app.before_request
+    def protect_routes():
+        if request.endpoint is None or request.endpoint in {"static", "health"}:
+            return
+        if request.endpoint != "login" and "user_id" not in session:
+            return redirect(url_for("login"), code=303)
+        if request.method == "POST":
+            expected = session.get("csrf_token")
+            tokens = request.form.getlist("csrf_token")
+            if not expected or len(tokens) != 1 or not compare_digest(
+                expected.encode("utf-8"), tokens[0].encode("utf-8")
+            ):
+                return Response("Invalid or expired security token. Reload the page and try again.\n",
+                                status=400, mimetype="text/plain")
+
+    @app.after_request
+    def prevent_private_caching(response):
+        if request.endpoint not in {"static", "health"}:
+            response.cache_control.no_store = True
+        return response
+
+    @app.route("/login", methods=["GET", "POST"])
+    def login():
+        if "user_id" in session:
+            return redirect(url_for("dashboard"), code=303)
+        if request.method == "GET":
+            return render_template("login.html", username="", error=None)
+
+        username = request.form.get("username", "").strip()
+        password = request.form.get("password", "")
+        user = database.find_user(get_db(), username) if len(username) <= 128 else None
+        stored_hash = user["password_hash"] if user is not None else DUMMY_PASSWORD_HASH
+        if len(password) > 1024 or not check_password_hash(stored_hash, password) or user is None:
+            return render_template("login.html", username=username, error=LOGIN_ERROR), 401
+
+        session.clear()
+        session.permanent = True
+        session["user_id"] = user["id"]
+        session["username"] = user["username"]
+        flash(f"Welcome back {user['username']}!", "success")
+        return redirect(url_for("dashboard"), code=303)
+
+    @app.post("/logout")
+    def logout():
+        session.clear()
+        return redirect(url_for("login"), code=303)
 
     @app.cli.command("init-db")
     def init_db():
@@ -141,11 +200,11 @@ def create_app(config_class=DevelopmentConfig):
         if not filter_errors and not errors:
             db = get_db()
             try:
-                task_service.create_task(db, fields)
+                task = task_service.create_task(db, fields, user_id=session["user_id"])
             except ValidationError as error:
                 errors = error.errors
             else:
-                flash("Task added.", "success")
+                flash("Task Added", f"success:create:{task.id}")
                 return _redirect_to_dashboard(filters)
 
         return _render_dashboard(filters, form_values, errors, filter_errors=filter_errors), 400
@@ -163,20 +222,20 @@ def create_app(config_class=DevelopmentConfig):
             fields, form_values, errors = _read_task_form(editing=True, filter_errors=filter_errors)
             if not filter_errors and not errors:
                 try:
-                    result = task_service.update_task(db, task_id, fields)
+                    result = task_service.update_task(db, task_id, fields, user_id=session["user_id"])
                 except TaskNotFound:
                     abort(404)
                 except ValidationError as error:
                     errors = error.errors
                 else:
                     if result.changed:
-                        flash("Task updated.", "success")
+                        flash("Task Updated", f"success:edit:{task_id}")
                     else:
                         flash("No changes to save.", "info")
                     return _redirect_to_dashboard(filters)
 
         try:
-            task = task_service.get_task(db, task_id)
+            task = task_service.get_task(db, task_id, user_id=session["user_id"])
         except TaskNotFound:
             abort(404)
 
@@ -210,12 +269,12 @@ def create_app(config_class=DevelopmentConfig):
         today = local_today(current_app.config["TIMEZONE"])
         db = get_db()
         try:
-            result = task_service.complete_task(db, task_id, today)
+            result = task_service.complete_task(db, task_id, today, user_id=session["user_id"])
         except TaskNotFound:
             abort(404)
 
         if result.changed:
-            flash("Task completed.", "success")
+            flash("Task Completed", f"success:complete:{task_id}")
         else:
             flash("Task is already completed.", "info")
         return _redirect_to_dashboard(filters)
@@ -232,11 +291,11 @@ def create_app(config_class=DevelopmentConfig):
 
         db = get_db()
         try:
-            task_service.delete_task(db, task_id)
+            task_service.delete_task(db, task_id, user_id=session["user_id"])
         except TaskNotFound:
             abort(404)
 
-        flash("Task deleted.", "success")
+        flash("Task Deleted", "success")
         return _redirect_to_dashboard(filters)
 
     @app.get("/summaries")
@@ -247,7 +306,7 @@ def create_app(config_class=DevelopmentConfig):
             return _render_dashboard(filters, form_values, filter_errors), 400
 
         today = local_today(current_app.config["TIMEZONE"])
-        reports = task_service.get_summaries(get_db(), today)
+        reports = task_service.get_summaries(get_db(), today, user_id=session["user_id"])
         return render_template(
             "summaries.html", daily=reports["daily"], weekly=reports["weekly"], filters=filters
         )
