@@ -20,6 +20,10 @@
 
   cancel.addEventListener("click", () => dialog.close());
   dialog.addEventListener("close", () => trigger?.focus({ preventScroll: true }));
+  document.addEventListener("submit", event => {
+    if (event.target !== trigger?.form || !confirm.disabled || !dialog.open) return;
+    trigger.closest(".task-card").dataset.taskAnimation = "delete";
+  });
   confirm.addEventListener("click", () => {
     if (!dialog.open || !trigger) return;
     confirm.disabled = true;

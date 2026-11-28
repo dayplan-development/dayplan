@@ -4,9 +4,11 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}DayPlan{% endblock %}</title>
+  <link rel="icon" href="{{ url_for('static', filename='favicon.svg') }}" type="image/svg+xml">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
-<body>
+<body{% if request.endpoint == 'login' %} class="login-page"{% endif %}>
+  {% if request.endpoint != 'login' %}
   {% set nav_status = filters.status if filters is defined and filters.status != 'All' else none %}
   {% set nav_priority = filters.priority if filters is defined and filters.priority != 'All' else none %}
   {% set on_dashboard = request.endpoint != 'summaries' %}
@@ -23,20 +25,60 @@
       <a class="nav-link nav-summaries{% if not on_dashboard %} is-current{% endif %}"{% if not on_dashboard %} aria-current="page"{% endif %}
          href="{{ url_for('summaries', status=nav_status, priority=nav_priority) }}">Summaries</a>
     </nav>
-    <div class="sidebar-note">
-      <svg class="sidebar-landscape" viewBox="0 0 240 112" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
-        <defs>
-          <linearGradient id="sidebar-ridge" x2="0" y2="1" gradientUnits="objectBoundingBox">
-            <stop offset="0" stop-color="#FF5A4E" stop-opacity=".8"/>
-            <stop offset="1" stop-color="#FF5A4E" stop-opacity="0"/>
-          </linearGradient>
-        </defs>
-        <path d="M0 78 34 47Q39 43 44 46L99 79 143 56 188 74 240 48V112H0Z" fill="#8B909B" opacity=".16"/>
-        <path d="m74 112 76-66q5-5 10 0l19 17 29-41q5-7 10 0l22 28v62Z" fill="url(#sidebar-ridge)"/>
-      </svg>
-      <p class="tagline">Plan your day. Own your time.</p>
+    {% set current_username = session.get('username', '') %}
+    <div class="profile-menu" data-profile-menu>
+      <button class="profile-trigger" type="button" data-profile-toggle aria-expanded="false"
+              aria-controls="profile-menu-panel" aria-label="Open profile menu for {{ current_username }}">
+        <span aria-hidden="true">{{ current_username[:1]|upper }}</span>
+      </button>
+      <section class="profile-panel" id="profile-menu-panel" aria-label="Account menu" hidden>
+        <div class="profile-summary">
+          <span class="profile-avatar" aria-hidden="true">{{ current_username[:1]|upper }}</span>
+          <div>
+            <p class="profile-username">{{ current_username }}</p>
+            <p class="profile-status">Logged in to DayPlan</p>
+          </div>
+        </div>
+        <p class="profile-demo">Demo account</p>
+        <div class="profile-divider" aria-hidden="true"></div>
+        <form method="post" action="{{ url_for('logout') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="profile-logout" type="submit">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M10 17l5-5-5-5m5 5H3m9-8h7a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-7"/>
+            </svg>
+            Log out
+          </button>
+        </form>
+      </section>
+    </div>
+    <div class="sidebar-footer">
+      <form class="sidebar-logout" method="post" action="{{ url_for('logout') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="btn" type="submit">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M10 17l5-5-5-5m5 5H3m9-8h7a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-7"/>
+          </svg>
+          Log out
+        </button>
+      </form>
+      <div class="sidebar-note">
+        <svg class="sidebar-landscape" viewBox="0 0 240 112" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+          <defs>
+            <linearGradient id="sidebar-ridge" x2="0" y2="1" gradientUnits="objectBoundingBox">
+              <stop offset="0" stop-color="#FF5A4E" stop-opacity=".8"/>
+              <stop offset="1" stop-color="#FF5A4E" stop-opacity="0"/>
+            </linearGradient>
+          </defs>
+          <path d="M0 78 34 47Q39 43 44 46L99 79 143 56 188 74 240 48V112H0Z" fill="#8B909B" opacity=".16"/>
+          <path d="m74 112 76-66q5-5 10 0l19 17 29-41q5-7 10 0l22 28v62Z" fill="url(#sidebar-ridge)"/>
+        </svg>
+        <p class="tagline">Plan your day. Own your time.</p>
+      </div>
     </div>
   </header>
+  <script src="{{ url_for('static', filename='js/profile-menu.js') }}" defer></script>
+  {% endif %}
 
   <main class="container page" tabindex="-1">
     {% set messages = get_flashed_messages(with_categories=true) %}
@@ -44,12 +86,20 @@
     <div class="visually-hidden" role="status" aria-live="polite" aria-atomic="true" data-flash-polite></div>
     <div class="visually-hidden" role="alert" aria-live="assertive" aria-atomic="true" data-flash-assertive></div>
     <div class="flash-stack" data-flash-stack>
-      {% for category, message in messages %}
-      <div class="flash flash-{{ category }}" data-flash-category="{{ category }}">
-        <p class="flash-message">
-          {% if category == 'success' %}<strong>Success:</strong> {% endif %}{{ message }}
-        </p>
-        <button class="flash-close" type="button" aria-label="Dismiss notification" hidden>&times;</button>
+      {% for flash_type, message in messages %}
+      {% set parts = flash_type.split(':') %}
+      {% set category = parts[0] %}
+      <div class="flash flash-{{ category }}" data-flash-category="{{ category }}"{% if parts|length == 3 %} data-task-effect="{{ parts[1] }}" data-effect-task-id="{{ parts[2] }}"{% endif %}>
+        {% if category == 'success' %}
+        <span class="flash-progress" aria-hidden="true" hidden></span>
+        <svg class="flash-check" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path pathLength="1" d="m5 12 4 4L19 6"/>
+        </svg>
+        {% endif %}
+        <p class="flash-message">{{ message }}</p>
+        <button class="flash-close" type="button" aria-label="Dismiss notification" hidden>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>
+        </button>
       </div>
       {% endfor %}
     </div>

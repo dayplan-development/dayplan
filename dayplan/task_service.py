@@ -8,9 +8,9 @@ from .models import DashboardTasks, TaskView
 from .validators import TaskNotFound, validate_task_fields
 
 
-def list_tasks(db, filters: dict, today: date) -> DashboardTasks:
+def list_tasks(db, filters: dict, today: date, *, user_id: int) -> DashboardTasks:
     views = []
-    for task in database.list_tasks(db):
+    for task in database.list_tasks(db, user_id=user_id):
         view = TaskView(task, is_overdue(task, today), is_due_today(task, today))
         if filters["status"] == "Pending" and task.status != "Pending":
             continue
@@ -24,37 +24,37 @@ def list_tasks(db, filters: dict, today: date) -> DashboardTasks:
     return DashboardTasks(views, [view for view in views if view.is_due_today])
 
 
-def get_task(db, task_id: int):
-    task = database.get_task(db, task_id)
+def get_task(db, task_id: int, *, user_id: int):
+    task = database.get_task(db, task_id, user_id=user_id)
     if task is None:
         raise TaskNotFound
     return task
 
 
-def create_task(db, fields):
-    return database.insert_task(db, validate_task_fields(fields, editing=False))
+def create_task(db, fields, *, user_id: int):
+    return database.insert_task(db, validate_task_fields(fields, editing=False), user_id=user_id)
 
 
-def update_task(db, task_id: int, fields):
+def update_task(db, task_id: int, fields, *, user_id: int):
     values = validate_task_fields(fields, editing=True)
-    result = database.update_task(db, task_id, values)
+    result = database.update_task(db, task_id, values, user_id=user_id)
     if result is None:
         raise TaskNotFound
     return result
 
 
-def delete_task(db, task_id: int):
-    if not database.delete_task(db, task_id):
+def delete_task(db, task_id: int, *, user_id: int):
+    if not database.delete_task(db, task_id, user_id=user_id):
         raise TaskNotFound
 
 
-def complete_task(db, task_id: int, today: date):
-    result = database.complete_task(db, task_id, today)
+def complete_task(db, task_id: int, today: date, *, user_id: int):
+    result = database.complete_task(db, task_id, today, user_id=user_id)
     if result is None:
         raise TaskNotFound
     return result
 
 
-def get_summaries(db, today: date):
-    tasks = database.list_tasks(db)
+def get_summaries(db, today: date, *, user_id: int):
+    tasks = database.list_tasks(db, user_id=user_id)
     return {"daily": analytics.daily_summary(tasks, today), "weekly": analytics.weekly_summary(tasks, today)}

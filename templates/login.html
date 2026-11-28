@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}Log in | DayPlan{% endblock %}
+{% block content %}
+<section class="login-card" aria-labelledby="login-heading">
+  <p class="login-brand">
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18"/>
+    </svg>
+    <span>Day<span class="login-brand-accent">Plan</span></span>
+  </p>
+  <h1 id="login-heading">Log in to DayPlan</h1>
+  <p class="login-tagline">Plan your day. Own your time.</p>
+  <form method="post" action="{{ url_for('login') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="field">
+      <label for="username">Username</label>
+      <input id="username" name="username" autocomplete="username" required maxlength="128"
+             value="{{ username }}"{% if error %} aria-invalid="true" aria-describedby="login-error"{% endif %}>
+    </div>
+    <div class="field">
+      <label for="password">Password</label>
+      <div class="login-password">
+        <input id="password" name="password" type="password" autocomplete="current-password" required maxlength="1024"
+               {% if error %}aria-invalid="true" aria-describedby="login-error"{% endif %}>
+        <button class="password-toggle" type="button" data-password-toggle aria-controls="password" aria-label="Show password" hidden>
+          <svg class="password-eye-off" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M10.6 10.6a2 2 0 0 0 2.8 2.8M9.9 5.2A10.8 10.8 0 0 1 22 12s-1 2.1-3.1 4M6.3 6.3A14 14 0 0 0 2 12s3.4 7 10 7a10 10 0 0 0 5-1.3M3 3l18 18"/>
+          </svg>
+          <svg class="password-eye" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+    {% if error %}<p class="field-error" id="login-error" role="alert">{{ error }}</p>{% endif %}
+    <button class="btn btn-primary" type="submit">Log in</button>
+  </form>
+  <a class="login-account-link" href="#account-creation">Create account</a>
+  <p class="login-account-note" id="account-creation">Account creation isn't available yet. Please use one of our demo accounts to explore DayPlan.</p>
+</section>
+<script src="{{ url_for('static', filename='js/login.js') }}" defer></script>
+{% endblock %}

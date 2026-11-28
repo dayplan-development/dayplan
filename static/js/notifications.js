@@ -3,10 +3,17 @@
   const polite = document.querySelector("[data-flash-polite]");
   const assertive = document.querySelector("[data-flash-assertive]");
   const announce = [];
-  const successDuration = 4000;
+  const successDuration = 3600;
+  const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
   stack.classList.add("is-enhanced");
 
   for (const notification of stack.querySelectorAll("[data-flash-category]")) {
+    const { taskEffect, effectTaskId } = notification.dataset;
+    if (effectTaskId) {
+      for (const card of document.querySelectorAll(`[data-task-id="${CSS.escape(effectTaskId)}"]`)) {
+        card.dataset.taskAnimation = taskEffect;
+      }
+    }
     const category = notification.dataset.flashCategory;
     const isError = category === "error" || category === "danger";
     const announcement = document.createElement("span");
@@ -18,6 +25,19 @@
     });
 
     const close = notification.querySelector(".flash-close");
+    const progress = notification.querySelector(".flash-progress");
+    let countdown;
+    if (progress && !reducedMotion.matches) {
+      progress.hidden = false;
+      countdown = progress.animate([{ transform: "scaleX(1)" }, { transform: "scaleX(0)" }], {
+        duration: successDuration,
+        fill: "both",
+      });
+      countdown.pause();
+      reducedMotion.addEventListener("change", event => {
+        progress.hidden = event.matches;
+      });
+    }
     let timer;
     let started;
     let remaining = successDuration;
@@ -28,6 +48,10 @@
       clearTimeout(timer);
       timer = undefined;
       remaining = Math.max(0, remaining - (performance.now() - started));
+      if (countdown) {
+        countdown.pause();
+        countdown.currentTime = successDuration - remaining;
+      }
     }
 
     async function dismiss() {
@@ -48,6 +72,10 @@
       if (timer !== undefined || hovered || notification.matches(":focus-within") ||
           notification.classList.contains("is-dismissing")) return;
       started = performance.now();
+      if (countdown) {
+        countdown.currentTime = successDuration - remaining;
+        countdown.play();
+      }
       timer = setTimeout(dismiss, remaining);
     }
 

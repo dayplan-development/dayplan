@@ -5,11 +5,30 @@ from unittest.mock import Mock, call
 
 import pytest
 from flask import Flask, g, template_rendered
+from flask.testing import FlaskClient
 from werkzeug.datastructures import MultiDict
 
 import dayplan
 from config import TestingConfig as AppTestingConfig
 from dayplan import close_db, create_app, database, get_db, task_service
+
+
+class SignedInClient(FlaskClient):
+    """Exercise the task routes with an established demo session and form token."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        with self.session_transaction() as session:
+            session["user_id"] = 1
+            session["username"] = "christiv"
+            session["csrf_token"] = "test-form-token"
+
+    def open(self, *args, **kwargs):
+        if kwargs.get("method", "GET").upper() == "POST":
+            data = MultiDict(kwargs.pop("data", None))
+            data.add("csrf_token", "test-form-token")
+            kwargs["data"] = data
+        return super().open(*args, **kwargs)
 
 
 @pytest.fixture
@@ -37,6 +56,7 @@ def dashboard_app(app, tmp_path, monkeypatch):
     database_path = str(tmp_path / "dashboard.sqlite3")
     database.initialize_database(database_path)
     app.config["DATABASE_PATH"] = database_path
+    app.test_client_class = SignedInClient
     monkeypatch.setattr(dayplan, "local_today", Mock(return_value=date(2026, 11, 26)))
     return app
 
@@ -53,13 +73,13 @@ def populated_dashboard_app(dashboard_app):
             ("High due tomorrow", "High", "2026-11-27"),
         ):
             task_service.create_task(
-                connection, {"title": title, "priority": priority, "due_date": due_date}
+                connection, {"title": title, "priority": priority, "due_date": due_date}, user_id=1
             )
         completed = task_service.create_task(
             connection,
-            {"title": "Completed today", "priority": "High", "due_date": "2026-11-26"},
+            {"title": "Completed today", "priority": "High", "due_date": "2026-11-26"}, user_id=1
         )
-        task_service.complete_task(connection, completed.id, date(2026, 11, 26))
+        task_service.complete_task(connection, completed.id, date(2026, 11, 26), user_id=1)
     return dashboard_app
 
 
@@ -71,7 +91,7 @@ def edit_app(dashboard_app):
             "description": "Original notes",
             "due_date": "2026-11-25",
             "priority": "Medium",
-        })
+        }, user_id=1)
     return dashboard_app
 
 
@@ -104,7 +124,7 @@ def request_template(app, path, expected_template, **kwargs):
 
 def saved_tasks(app):
     with app.app_context():
-        return database.list_tasks(get_db())
+        return database.list_tasks(get_db(), user_id=1)
 
 
 def test_create_app_loads_secret_key_from_environment(monkeypatch):
@@ -333,7 +353,7 @@ def test_dashboard_renders_full_task_text_and_actions_by_status(populated_dashbo
     description = "https://example.test/".ljust(500, "W")
     with app.app_context():
         long_task = task_service.create_task(
-            get_db(), {"title": title, "description": description, "priority": "High"}
+            get_db(), {"title": title, "description": description, "priority": "High"}, user_id=1
         )
     tasks = {task.title: task for task in saved_tasks(app)}
 
@@ -375,8 +395,8 @@ def test_dashboard_overview_counts_all_tasks_independently_of_filters(
             ("Past deadline, completed today", "2026-11-23", date(2026, 11, 26)),
             ("Completed yesterday", "2026-11-25", date(2026, 11, 25)),
         ):
-            task = task_service.create_task(db, {"title": title, "due_date": due_date})
-            task_service.complete_task(db, task.id, completion_date)
+            task = task_service.create_task(db, {"title": title, "due_date": due_date}, user_id=1)
+            task_service.complete_task(db, task.id, completion_date, user_id=1)
     get_summaries = Mock(wraps=task_service.get_summaries)
     monkeypatch.setattr(task_service, "get_summaries", get_summaries)
 
@@ -518,7 +538,7 @@ def test_post_tasks_persists_approved_fields_and_redirects_with_filters(dashboar
     assert task.status == "Pending"
     assert task.completed_on is None
     with client.session_transaction() as session:
-        assert session["_flashes"] == [("success", "Task added.")]
+        assert session["_flashes"] == [(f"success:create:{task.id}", "Task Added")]
     dayplan.local_today.assert_not_called()
 
 
@@ -530,9 +550,13 @@ def test_post_tasks_renders_success_notification_once_after_redirect(dashboard_a
     assert [redirect.status_code for redirect in response.history] == [303]
     assert response.status_code == 200
     html = response.get_data(as_text=True)
-    assert html.count("Task added.") == 1
+    assert html.count("Task Added") == 1
     assert html.count('data-flash-category="success"') == 1
-    assert "<strong>Success:</strong>" in html
+    assert "Success:" not in html
+    [task] = saved_tasks(dashboard_app)
+    assert f'data-task-effect="create" data-effect-task-id="{task.id}"' in html
+    assert f'data-task-id="{task.id}"' in html
+    assert 'class="flash-progress" aria-hidden="true" hidden' in html
     assert 'role="status" aria-live="polite" aria-atomic="true"' in html
     assert 'role="alert" aria-live="assertive" aria-atomic="true"' in html
     assert 'type="button" aria-label="Dismiss notification" hidden' in html
@@ -540,7 +564,7 @@ def test_post_tasks_renders_success_notification_once_after_redirect(dashboard_a
 
     next_response = client.get("/")
     assert next_response.status_code == 200
-    assert b"Task added." not in next_response.data
+    assert b"Task Added" not in next_response.data
     assert b"data-flash-stack" not in next_response.data
 
 
@@ -734,7 +758,7 @@ def test_post_tasks_failed_write_returns_generic_500_without_success_flash(dashb
         assert "_flashes" not in session
     dashboard = client.get("/")
     assert dashboard.status_code == 200
-    assert b"Task added." not in dashboard.data
+    assert b"Task Added" not in dashboard.data
     assert b'data-flash-category="success"' not in dashboard.data
 
 
@@ -823,7 +847,7 @@ def test_edit_task_get_rejects_invalid_filters(edit_app, query, filter_errors):
 def test_edit_task_post_updates_all_fields_and_preserves_completion(edit_app, monkeypatch):
     [original] = saved_tasks(edit_app)
     with edit_app.app_context():
-        task_service.complete_task(get_db(), original.id, date(2026, 11, 26))
+        task_service.complete_task(get_db(), original.id, date(2026, 11, 26), user_id=1)
     update = Mock(wraps=task_service.update_task)
     monkeypatch.setattr(task_service, "update_task", update)
     client = edit_app.test_client()
@@ -847,7 +871,7 @@ def test_edit_task_post_updates_all_fields_and_preserves_completion(edit_app, mo
     assert saved.due_date == date(2024, 2, 29)
     assert saved.status == "Completed" and saved.completed_on == date(2026, 11, 26)
     with client.session_transaction() as session:
-        assert session["_flashes"] == [("success", "Task updated.")]
+        assert session["_flashes"] == [(f"success:edit:{original.id}", "Task Updated")]
 
 
 def test_edit_task_post_clears_optional_fields(edit_app):
@@ -981,7 +1005,7 @@ def test_complete_task_persists_status_and_server_date(populated_dashboard_app, 
     assert saved.status == "Completed"
     assert saved.completed_on == date(2026, 11, 26)
     with client.session_transaction() as session:
-        assert session["_flashes"] == [("success", "Task completed.")]
+        assert session["_flashes"] == [(f"success:complete:{task.id}", "Task Completed")]
 
 
 def test_complete_task_repeat_preserves_original_completion_and_timestamp(
@@ -1138,12 +1162,12 @@ def test_delete_task_removes_only_target_and_preserves_filters(
     assert delete.call_args.args[1:] == (task.id,)
     assert saved_tasks(app) == [saved for saved in before if saved.id != task.id]
     with client.session_transaction() as session:
-        assert session["_flashes"] == [("success", "Task deleted.")]
+        assert session["_flashes"] == [("success", "Task Deleted")]
     dashboard = client.get(location)
     assert dashboard.status_code == 200
     html = dashboard.get_data(as_text=True)
     assert f'<h3 class="task-title">{title}</h3>' not in html
-    assert html.count("Task deleted.") == 1
+    assert html.count("Task Deleted") == 1
 
 
 @pytest.mark.parametrize(
@@ -1266,7 +1290,8 @@ def test_summaries_renders_exact_reports_using_one_service_call(populated_dashbo
     }
     html = response.get_data(as_text=True)
     assert 'href="#daily">Daily</a>' in html and 'href="#weekly">Weekly</a>' in html
-    assert 'href="/">Back to dashboard</a>' in html
+    assert 'class="btn summaries-return"' in html
+    assert 'href="/">' in html
     assert "<h2>Your <span>progress</span></h2>" in html
     values_by_section = {
         "daily": [
@@ -1300,7 +1325,7 @@ def test_summaries_renders_exact_reports_using_one_service_call(populated_dashbo
     dayplan.local_today.assert_called_once_with("Asia/Kolkata")
     get_summaries.assert_called_once()
     assert get_summaries.call_args.args[1:] == (date(2026, 11, 26),)
-    assert get_summaries.call_args.kwargs == {}
+    assert get_summaries.call_args.kwargs == {"user_id": 1}
 
 
 def test_summaries_filters_change_navigation_but_not_reports(populated_dashboard_app):
@@ -1313,10 +1338,10 @@ def test_summaries_filters_change_navigation_but_not_reports(populated_dashboard
 
     assert response.status_code == 200
     assert filtered == {**unfiltered, "filters": {"status": "Completed", "priority": "Low"}}
-    assert 'href="/?status=Completed&amp;priority=Low">Back to dashboard</a>' in response.get_data(as_text=True)
+    assert 'href="/?status=Completed&amp;priority=Low">' in response.get_data(as_text=True)
     one_filter = app.test_client().get("/summaries?status=All&priority=Low")
     assert one_filter.status_code == 200
-    assert 'href="/?priority=Low">Back to dashboard</a>' in one_filter.get_data(as_text=True)
+    assert 'href="/?priority=Low">' in one_filter.get_data(as_text=True)
 
 
 @pytest.mark.parametrize(
@@ -1327,7 +1352,7 @@ def test_summaries_filters_change_navigation_but_not_reports(populated_dashboard
 def test_summaries_distinguishes_empty_weeks_from_zero_completion(dashboard_app, due_dates, display):
     with dashboard_app.app_context():
         for due_date in due_dates:
-            task_service.create_task(get_db(), {"title": "Pending task", "due_date": due_date})
+            task_service.create_task(get_db(), {"title": "Pending task", "due_date": due_date}, user_id=1)
 
     response, _ = request_template(dashboard_app, "/summaries", "summaries.html")
 
@@ -1408,14 +1433,15 @@ def test_unknown_route_returns_404(client):
     assert response.get_data(as_text=True).strip() == "Page not found."
 
 
-def test_unhandled_exception_returns_generic_500(app, client):
+def test_unhandled_exception_returns_generic_500(app):
     app.config["PROPAGATE_EXCEPTIONS"] = False
 
     @app.get("/test-error")
     def raise_error():
         raise RuntimeError("Private exception detail")
 
-    response = client.get("/test-error")
+    app.test_client_class = SignedInClient
+    response = app.test_client().get("/test-error")
 
     assert response.status_code == 500
     assert response.get_data(as_text=True).strip() == "Internal server error."

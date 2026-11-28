@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="DayPlan">
+  <rect width="64" height="64" rx="15" fill="#141B2D"/>
+  <rect x="14" y="17" width="36" height="33" rx="6" fill="none" stroke="#FF5A4E" stroke-width="5"/>
+  <path d="M23 12v10m18-10v10M14 29h36" fill="none" stroke="#FF5A4E" stroke-width="5" stroke-linecap="round"/>
+  <path d="m24 39 6 6 11-13" fill="none" stroke="#F4F1EA" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
