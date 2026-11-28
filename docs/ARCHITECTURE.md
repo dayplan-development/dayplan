@@ -82,7 +82,7 @@ The entry point depends on the factory, the HTTP layer depends on the service, a
 
 Forms submit title, description, due date, and priority in the POST body. The server assigns the ID, status, and completion date. Status and priority navigation filters come only from the URL query. Apply both together and preserve them across task actions and 303 redirects. A validation failure returns 400 and re-renders the relevant form with its entered values and field messages. Identical edits leave the record and `updated_at` unchanged.
 
-The route reads HTTP inputs, obtains the request's database connection when needed, and passes the project-local date to operations that use it. The route chooses the template, redirect, or response status. Jinja escapes user-entered text and displays server-calculated values. `base.html` provides layout, CSS and flash messages. `dashboard.html` renders the task lists and create form, `task_form.html` reuses its field macro for editing, and `summaries.html` extends the shared base with both reports. Deletion confirmation uses the browser's native dialog before form submission.
+The route reads HTTP inputs, obtains the request's database connection when needed, and passes the project-local date to operations that use it. The route chooses the template, redirect, or response status. Jinja escapes user-entered text and displays server-calculated values. `base.html` provides layout, CSS and flash messages. `dashboard.html` renders the task lists and create form, `task_form.html` reuses its field macro for editing, and `summaries.html` extends the shared base with both reports. JavaScript opens an in-page confirmation dialog before submitting the existing deletion form.
 
 ### Create a task
 
